@@ -1,0 +1,63 @@
+{
+  "100": {
+    "class_type": "TestInputText",
+    "inputs": {
+      "text": "",
+      "preserve": "unchanged"
+    },
+    "_meta": {
+      "title": "Input Text — TEST FIXTURE ONLY"
+    }
+  },
+  "200": {
+    "class_type": "TestReference",
+    "inputs": {
+      "ref_image_0": "",
+      "ref_image_1": "",
+      "ref_image_2": "",
+      "ref_image_3": "",
+      "ref_image_4": "",
+      "ref_image_5": "",
+      "ref_image_6": "",
+      "ref_image_7": "",
+      "ref_image_8": "",
+      "preserve": "unchanged"
+    },
+    "_meta": {
+      "title": "Reference — TEST FIXTURE ONLY"
+    }
+  },
+  "300": {
+    "class_type": "TestDurationFloat",
+    "inputs": {
+      "value": 0.0
+    },
+    "_meta": {
+      "title": "Duration Float — TEST FIXTURE ONLY"
+    }
+  },
+  "400": {
+    "class_type": "TestScheduler",
+    "inputs": {
+      "steps": 0,
+      "seed": 42,
+      "mode": "fixture"
+    },
+    "_meta": {
+      "title": "Scheduler — TEST FIXTURE ONLY"
+    }
+  },
+  "900": {
+    "class_type": "TestUnrelatedNode",
+    "inputs": {
+      "connection": [
+        "100",
+        0
+      ],
+      "value": "unchanged"
+    },
+    "_meta": {
+      "title": "Unrelated — TEST FIXTURE ONLY"
+    }
+  }
+}
