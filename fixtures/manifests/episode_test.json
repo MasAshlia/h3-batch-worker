@@ -1,0 +1,85 @@
+{
+  "episode": "EP_TEST",
+  "shots": [
+    {
+      "shot_id": "S001",
+      "prompt_file": "../prompts/S001.txt"
+    },
+    {
+      "shot_id": "S002",
+      "prompt_file": "../prompts/S002.txt"
+    },
+    {
+      "shot_id": "S003",
+      "prompt_file": "../prompts/S003.txt"
+    },
+    {
+      "shot_id": "S004",
+      "prompt_file": "../prompts/S004.txt"
+    },
+    {
+      "shot_id": "S005",
+      "prompt_file": "../prompts/S005.txt"
+    },
+    {
+      "shot_id": "S006",
+      "prompt_file": "../prompts/S006.txt"
+    },
+    {
+      "shot_id": "S007",
+      "prompt_file": "../prompts/S007.txt"
+    },
+    {
+      "shot_id": "S008",
+      "prompt_file": "../prompts/S008.txt"
+    },
+    {
+      "shot_id": "S009",
+      "prompt_file": "../prompts/S009.txt"
+    },
+    {
+      "shot_id": "S010",
+      "prompt_file": "../prompts/S010.txt"
+    },
+    {
+      "shot_id": "S011",
+      "prompt_file": "../prompts/S011.txt"
+    },
+    {
+      "shot_id": "S012",
+      "prompt_file": "../prompts/S012.txt"
+    },
+    {
+      "shot_id": "S013",
+      "prompt_file": "../prompts/S013.txt"
+    },
+    {
+      "shot_id": "S014",
+      "prompt_file": "../prompts/S014.txt"
+    },
+    {
+      "shot_id": "S015",
+      "prompt_file": "../prompts/S015.txt"
+    },
+    {
+      "shot_id": "S016",
+      "prompt_file": "../prompts/S016.txt"
+    },
+    {
+      "shot_id": "S017",
+      "prompt_file": "../prompts/S017.txt"
+    },
+    {
+      "shot_id": "S018",
+      "prompt_file": "../prompts/S018.txt"
+    },
+    {
+      "shot_id": "S019",
+      "prompt_file": "../prompts/S019.txt"
+    },
+    {
+      "shot_id": "S020",
+      "prompt_file": "../prompts/S020.txt"
+    }
+  ]
+}

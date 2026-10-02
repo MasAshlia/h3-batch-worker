@@ -1,0 +1,22 @@
+comfyui:
+  base_url: http://127.0.0.1:8188
+
+workflow:
+  template: ./fixtures/workflows/sample_h3_api_workflow.json
+  mapping:
+    prompt_node: "100"
+    reference_node: "200"
+    duration_node: "300"
+    scheduler_node: "400"
+    # Optional input names (defaults shown):
+    # prompt_input: text
+    # duration_input: value
+    # steps_input: steps
+    # Optional: seed_node and seed_input (default: seed).
+    # For real LoadImage nodes, configure each used slot explicitly:
+    # reference_inputs:
+    #   ref_image_0: {node: "501", input: image}
+
+paths:
+  asset_manifest: ./fixtures/assets/asset_manifest.json
+  output_root: ./runs
