@@ -4,8 +4,8 @@ import logging
 from pathlib import Path
 from uuid import uuid4
 
-from .comfy_client import ComfyClient
-from .errors import ConfigurationError, WorkerError
+from .comfy_client import ComfyClient, extract_video_output
+from .errors import ComfyClientError, ConfigurationError, WorkerError
 from .models import BatchReport, TaskStatus
 from .workflow_patcher import WorkflowPatcher
 
@@ -17,8 +17,26 @@ def _now() -> str:
 
 
 class QueueManager:
-    def __init__(self, client: ComfyClient, patcher: WorkflowPatcher, output_root: Path):
+    def __init__(
+        self,
+        client: ComfyClient,
+        patcher: WorkflowPatcher,
+        output_root: Path,
+        *,
+        max_attempts: int = 2,
+        require_queue_confirmation: bool = False,
+        require_video_output: bool = False,
+        debug_root: Path | None = None,
+        comfy_output: Path | None = None,
+    ):
+        if max_attempts not in {1, 2}:
+            raise ConfigurationError("max_attempts must be one or two")
         self.client, self.patcher, self.output_root = client, patcher, output_root
+        self.max_attempts = max_attempts
+        self.require_queue_confirmation = require_queue_confirmation
+        self.require_video_output = require_video_output
+        self.debug_root = debug_root
+        self.comfy_output = comfy_output
 
     def run(self, report: BatchReport) -> tuple[Path, dict]:
         if not report.ready:
@@ -38,6 +56,8 @@ class QueueManager:
                 "seed": compiled.task.seed, "prompt_id": None,
                 "status": TaskStatus.VALIDATED, "retry_count": 0,
                 "started_at": None, "finished_at": None, "error": None,
+                "submitted_at": None, "running_at": None, "completed_at": None,
+                "output": None,
                 "attempts": [], "events": [],
             } for compiled in report.tasks],
         }
@@ -52,6 +72,12 @@ class QueueManager:
             shot["status"] = status
             event = {"at": _now(), "status": status, "prompt_id": shot["prompt_id"]}
             shot["events"].append(event)
+            if status == TaskStatus.SUBMITTED:
+                shot["submitted_at"] = event["at"]
+            elif status == TaskStatus.RUNNING and shot["running_at"] is None:
+                shot["running_at"] = event["at"]
+            elif status in {TaskStatus.SUCCESS, TaskStatus.FAILED}:
+                shot["completed_at"] = event["at"]
             # No prompt, URL, exception body, token or absolute path in logs.
             _LOG.info("%s %s prompt_id=%s", shot["shot_id"], status, shot["prompt_id"] or "-")
             save()
@@ -66,7 +92,7 @@ class QueueManager:
             for compiled, shot in zip(report.tasks, record["shots"], strict=True):
                 transition(compiled, shot, TaskStatus.VALIDATED)
                 shot["started_at"] = _now()
-                for attempt_number in range(2):
+                for attempt_number in range(self.max_attempts):
                     if attempt_number:
                         shot["retry_count"] = 1
                         shot["prompt_id"] = None
@@ -83,6 +109,16 @@ class QueueManager:
                         attempt["prompt_id"] = shot["prompt_id"]
                         attempt["status"] = TaskStatus.SUBMITTED
                         transition(compiled, shot, TaskStatus.SUBMITTED)
+                        if self.require_queue_confirmation:
+                            queue = self.client.get_queue()
+                            queued_ids = {
+                                item[1]
+                                for key in ("queue_running", "queue_pending")
+                                for item in queue.get(key, [])
+                                if isinstance(item, (list, tuple)) and len(item) >= 2
+                            }
+                            if shot["prompt_id"] not in queued_ids:
+                                raise ComfyClientError("Submitted prompt_id was not visible in ComfyUI queue")
 
                         def running():
                             attempt["status"] = TaskStatus.RUNNING
@@ -92,6 +128,22 @@ class QueueManager:
                         if completion.status not in {TaskStatus.SUCCESS, TaskStatus.FAILED}:
                             raise ConfigurationError("Completion must have a terminal status")
                         status, error = completion.status, completion.error
+                        if completion.history is not None and self.debug_root is not None:
+                            self.debug_root.mkdir(parents=True, exist_ok=True)
+                            (self.debug_root / f"history_{shot['shot_id']}.json").write_text(
+                                json.dumps(completion.history, ensure_ascii=False, indent=2),
+                                encoding="utf-8",
+                            )
+                        if status == TaskStatus.SUCCESS and self.require_video_output:
+                            if completion.history is None:
+                                raise ComfyClientError("Successful task has no ComfyUI history")
+                            output = extract_video_output(completion.history, shot["prompt_id"])
+                            if self.comfy_output is None:
+                                raise ConfigurationError("Real run requires paths.comfy_output")
+                            output_path = self.comfy_output / output["subfolder"] / output["filename"]
+                            if not output_path.is_file() or output_path.stat().st_size <= 0:
+                                raise ComfyClientError("History video output does not exist or is empty")
+                            shot["output"] = output
                     except WorkerError as exc:
                         status, error = TaskStatus.FAILED, exc.to_dict()
                     except Exception:

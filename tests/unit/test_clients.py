@@ -1,4 +1,5 @@
 from io import BytesIO
+import inspect
 import json
 import time
 from urllib.error import HTTPError, URLError
@@ -6,7 +7,7 @@ from urllib.error import HTTPError, URLError
 import pytest
 
 import h3_worker.comfy_client as module
-from h3_worker.comfy_client import MockComfyClient, RealComfyClient
+from h3_worker.comfy_client import MockComfyClient, RealComfyClient, extract_video_output
 from h3_worker.errors import ComfyClientError, CompletionTimeoutError
 from h3_worker.models import TaskStatus
 
@@ -130,3 +131,19 @@ def test_transport_errors_do_not_leak_secrets(monkeypatch, exception):
 def test_invalid_or_credentialed_url_rejected(url):
     with pytest.raises(ComfyClientError):
         RealComfyClient(url)
+
+
+def test_extracts_real_save_video_history_shape():
+    history = {"pid": {"outputs": {"92": {
+        "images": [{"filename": "shot.mp4", "subfolder": "", "type": "output"}],
+        "animated": [True],
+    }}}}
+    assert extract_video_output(history, "pid") == {
+        "node_id": "92", "filename": "shot.mp4",
+        "subfolder": "", "type": "output",
+    }
+
+
+def test_real_wait_default_poll_interval_is_one_second():
+    parameter = inspect.signature(RealComfyClient.wait_for_completion).parameters["poll_interval"]
+    assert parameter.default == 1.0

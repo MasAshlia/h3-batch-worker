@@ -83,3 +83,15 @@ def test_missing_resolved_reference_rejected(patcher):
     task = parse_prompt("S001", "duration: 5\n@image_1: 林默")
     with pytest.raises(WorkflowError):
         patcher.patch(task, {})
+
+
+def test_safe_output_prefix_uses_shot_id(template, config):
+    template["92"] = {"class_type": "SaveVideo", "inputs": {"filename_prefix": "old"}}
+    mapping = {
+        **config.mapping,
+        "output_node": "92",
+        "output_prefix": "REAL_TEST",
+    }
+    task = parse_prompt("S001", "duration: 5\n@image_1: 林默")
+    result = WorkflowPatcher(template, mapping).patch(task, {"ref_image_0": "one.png"})
+    assert result["92"]["inputs"]["filename_prefix"] == "REAL_TEST_S001"

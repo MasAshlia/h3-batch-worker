@@ -12,12 +12,44 @@ _REFERENCE = re.compile(r"@image_([1-9]):\s*(\S(?:.*\S)?)")
 _MENTION = re.compile(r"@image_[A-Za-z0-9_]*")
 
 
-def parse_prompt(shot_id: str, prompt: str, seed: int | None = None) -> ShotTask:
+def parse_prompt(
+    shot_id: str,
+    prompt: str,
+    seed: int | None = None,
+    *,
+    duration_seconds: int | None = None,
+    references: dict[str, str] | None = None,
+) -> ShotTask:
     """Read metadata before the first blank line; preserve the original text."""
     if not isinstance(prompt, str) or not prompt.strip():
         raise InvalidPromptFormatError("Prompt must be non-empty text")
     if seed is not None and (type(seed) is not int or seed < 0):
         raise InvalidPromptFormatError("Seed must be a non-negative integer")
+    if duration_seconds is not None or references is not None:
+        if (type(duration_seconds) is not int or duration_seconds <= 0
+                or not isinstance(references, dict) or not references):
+            raise InvalidPromptFormatError(
+                "External Prompt metadata requires a positive duration and references"
+            )
+        if any(
+            not isinstance(key, str) or not re.fullmatch(r"image_[1-9]", key)
+            or not isinstance(value, str) or not value.strip()
+            for key, value in references.items()
+        ):
+            raise InvalidPromptFormatError("External references must use image_1 through image_9")
+        for token in _MENTION.findall(prompt):
+            if not re.fullmatch(r"@image_[1-9]", token):
+                raise InvalidPromptFormatError("Only @image_1 through @image_9 are supported")
+            if token[1:] not in references:
+                raise MissingReferenceError(f"Missing declaration: {token}")
+        return ShotTask(
+            shot_id,
+            prompt,
+            duration_seconds,
+            duration_seconds * 3,
+            dict(sorted(references.items())),
+            seed,
+        )
     duration = None
     references = {}
     # A leading blank line is ambiguous, so it does not silently skip the header.

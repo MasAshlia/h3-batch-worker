@@ -52,6 +52,19 @@ def test_twenty_task_batch(batch):
     assert report.tasks[1].task.steps == 24
 
 
+def test_batch_accepts_explicit_metadata_for_production_prompt(config, tmp_path):
+    prompt = tmp_path / "real.txt"
+    prompt.write_text("无元数据的真实生产 Prompt", encoding="utf-8")
+    manifest = tmp_path / "episode.json"
+    manifest.write_text(json.dumps({"episode": "REAL_TEST", "shots": [{
+        "shot_id": "S001", "prompt_file": "real.txt", "duration": 5,
+        "references": {"image_1": "林默"},
+    }]}), encoding="utf-8")
+    report, _ = compile_batch(manifest, config)
+    assert report.ready
+    assert report.tasks[0].task.steps == 15
+
+
 def test_collects_all_invalid_shots_and_does_not_guess(config, tmp_path):
     (tmp_path / "one.txt").write_text("@image_1: 林默", encoding="utf-8")
     (tmp_path / "two.txt").write_text("duration: 5\n@image_1: 雨夜街道", encoding="utf-8")

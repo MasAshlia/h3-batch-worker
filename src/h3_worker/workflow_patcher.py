@@ -15,9 +15,11 @@ class WorkflowPatcher:
         allowed_keys = {
             "prompt_node", "reference_node", "duration_node", "scheduler_node",
             "prompt_input", "duration_input", "steps_input", "reference_inputs",
-            "seed_node", "seed_input",
+            "seed_node", "seed_input", "output_node", "output_input", "output_prefix",
         }
-        if set(mapping) - allowed_keys or ("seed_input" in mapping and "seed_node" not in mapping):
+        if (set(mapping) - allowed_keys
+                or ("seed_input" in mapping and "seed_node" not in mapping)
+                or (set(mapping) & {"output_input", "output_prefix"} and "output_node" not in mapping)):
             raise WorkflowError("Unknown or incomplete workflow mapping fields")
         for key in ("prompt_node", "duration_node", "scheduler_node"):
             if key not in mapping:
@@ -47,6 +49,16 @@ class WorkflowPatcher:
         if "seed_node" in mapping:
             self.seed_target = (mapping["seed_node"], mapping.get("seed_input", "seed"))
             targets.append(self.seed_target)
+        self.output_target = None
+        self.output_prefix = None
+        if "output_node" in mapping:
+            self.output_target = (mapping["output_node"], mapping.get("output_input", "filename_prefix"))
+            self.output_prefix = mapping.get("output_prefix")
+            if self.output_prefix is not None and (
+                not isinstance(self.output_prefix, str) or not self.output_prefix.strip()
+            ):
+                raise WorkflowError("output_prefix must be a non-empty string")
+            targets.append(self.output_target)
         for target in targets:
             self._check_target(target)
         if len(set(targets)) != len(targets):
@@ -88,6 +100,8 @@ class WorkflowPatcher:
             write(target, value)
         if task.seed is not None:
             write(self.seed_target, task.seed)
+        if self.output_target is not None and self.output_prefix is not None:
+            write(self.output_target, f"{self.output_prefix}_{task.shot_id}")
         return workflow
 
     @property

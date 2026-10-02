@@ -51,7 +51,7 @@ def main() -> int:
             raise ValueError("Expected exactly one new mock run record")
         verify_run(created.pop())
         print("H3 TEST PASS: pytest, dry-run, mock batch and run.json verified.")
-        print("This verifies the logic core. Real ComfyUI/H3/GPU integration is still pending.")
+        print("This command verifies the logic core; real integration is tested separately with --real.")
         return 0
     except subprocess.CalledProcessError as exc:
         print(f"H3 TEST FAILED: command exited with code {exc.returncode}.", file=sys.stderr)

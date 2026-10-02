@@ -1,6 +1,6 @@
-# H3 无人值守批量生成器 V0.1
+# H3 无人值守批量生成器 V0.2
 
-**V0.1 Mac Logic PoC**。这是一个跨平台的任务编译和调度核心，当前在 Mac 上通过纯逻辑、dry-run 和 Mock ComfyUI 验证。
+V0.1 提供跨平台任务编译和 Mock 调度核心；V0.2 增加受限的 Windows 单镜头真实 ComfyUI 集成。
 
 已实现 Prompt 解析、资产验证、整批预检、Workflow Patch、Dry Run、Mock Queue、顺序执行、失败重试一次、运行记录和状态日志。Python 3.12+；唯一运行依赖为 PyYAML，测试使用 pytest。
 
@@ -50,7 +50,7 @@ GitHub 仓库：`MasAshlia/h3-batch-worker`，为私有仓库，Windows 使用�
 python -m h3_worker.cli dry-run fixtures/manifests/episode_test.json --config config.example.yaml
 ```
 
-V0.1 CLI 的 `run` 必须指定 `--mock`。`RealComfyClient` 是下一阶段使用的基础 HTTP 适配器，当前没有真实提交命令。
+CLI 的 `run` 必须明确指定 `--mock` 或 `--real`。`--real` 仅允许一个 shot，并执行真实服务、队列、workflow、输出与 history preflight。
 
 ## Prompt 固定格式
 
@@ -171,12 +171,12 @@ Dry-run 配置错误、预检错误、mock 最终失败时返回非 0；全批�
 | `batch.py` | episode 清单读取及整批编译 |
 | `config.py` / `file_io.py` / `errors.py` | 配置、文件读取和结构化错误 |
 | `comfy_client.py` | 抽象接口、完整 mock、基础 HTTP adapter |
-| `queue_manager.py` | 顺序运行、一次重试、日志和运行记录 |
-| `cli.py` | dry-run 和 mock run |
+| `queue_manager.py` | Mock 重试、真实单次提交、history 输出映射、日志和运行记录 |
+| `cli.py` | dry-run、mock run 和受限的单镜头 real run |
 
 `tests/unit` 覆盖解析边界、1/9/超过9张引用、off-by-one、缺失/冲突资产、时长与 steps、模板隔离、不同 mapping、seed、配置和 HTTP 传输契约。`tests/integration_mock` 覆盖 20 条批次、第三条持续失败后继续第四条、一次失败后成功、整批拒绝提交、CLI 退出码和生成 run.json。测试不依赖真实服务，也不进行 GPU 推理。
 
-## Windows 下一阶段
+## Windows 实机配置
 
 迁移时准备以下内容并替换配置，不需要改动固定格式解析、编号映射和 mock 调度规则：
 
@@ -185,8 +185,35 @@ Dry-run 配置错误、预检错误、mock 最终失败时返回非 0；全批�
 3. **真实资产清单和文件**；替换 `paths.asset_manifest`、episode 清单和 Prompt 文件。
 4. **真实服务地址和输出目录**；替换 `comfyui.base_url`、`paths.output_root`。
 
-进入真实 ComfyUI 测试前仍缺：工位导出的 API workflow、ComfyUI 版本和 H3 自定义节点版本/输入定义、时长/steps/seed/引用数量限制、API 可达性与鉴权方式（如果有）、图片上传文件名的输入规则、完成/失败的实际历史响应，以及视频输出位置和获取方法。先用一条虚构任务验证上传→提交→完成→产物，再验证小批量与故障。真实 CLI 开放、断线/超时后防重复提交策略、鉴权和产物收集留到这轮集成确认后实施。
+真实运行前必须在 `private/` 中保存 API workflow、节点 mapping、单镜头 Prompt、最小资产清单和本机配置；先运行 inspection 与 dry-run，再在空闲队列执行一个获准测试 shot。真实 CLI 不做失败自动重试，断线/超时后的人工核对应先查 queue/history，避免重复提交。
 
-`RealComfyClient` 使用标准库 urllib 实现图片 multipart 上传、prompt 提交、queue/history 查询及轮询等待；路由依据 [ComfyUI 官方服务器 API 文档](https://docs.comfy.org/development/comfyui-server/comms_routes)，上传与 history 字段依据 [官方 server.py](https://github.com/Comfy-Org/ComfyUI/blob/master/server.py) 和 [execution.py](https://github.com/Comfy-Org/ComfyUI/blob/master/execution.py) 核对（2026-10-01）。基础传输只通过替身响应测试，未与工位联调；不提供视频下载、鉴权或生产可用性承诺。
+`RealComfyClient` 使用标准库 urllib 实现图片 multipart 上传、prompt 提交、queue/history 查询及约 1 秒轮询；路由依据 [ComfyUI 官方服务器 API 文档](https://docs.comfy.org/development/comfyui-server/comms_routes)，上传与 history 字段依据 [官方 server.py](https://github.com/Comfy-Org/ComfyUI/blob/master/server.py) 和 [execution.py](https://github.com/Comfy-Org/ComfyUI/blob/master/execution.py) 核对（2026-10-01）。V0.2 只验证本机单镜头，不提供视频下载、鉴权、多镜头恢复或批量生产承诺。
+
+## Windows 单镜头真实集成
+
+V0.2 的 `--real` 安全阀只接受一个 shot、真实 API-format workflow、空闲且可读的 ComfyUI 队列，以及存在的 video output 节点。它不会重试真实生成；图片先上传，提交 workflow 只写服务器返回文件名。完成后必须从真实 history 找到唯一视频并验证本地输出非空，否则该 shot 记为失败。
+
+生产 Prompt 若不包含 V0.1 的 `duration:` / `@image_n:` 头部，不改写 Prompt；在私有 episode manifest 中显式提供确定性元数据：
+
+```json
+{
+  "episode": "REAL_TEST",
+  "shots": [{
+    "shot_id": "S001",
+    "prompt_file": "test_prompt.txt",
+    "duration": 5,
+    "references": {"image_1": "reference_1"}
+  }]
+}
+```
+
+私有配置、workflow、Prompt、资产清单、history 与视频必须放在已忽略的 `private/` 或 `local/`。先执行：
+
+```text
+python -m h3_worker.cli dry-run private/test_episode.json --config private/config.windows.yaml
+python -m h3_worker.cli run private/test_episode.json --real --config private/config.windows.yaml
+```
+
+真实运行记录包含 `shot_id`、`prompt_id`、状态时间戳和 history 提取的 output 映射。公开报告只使用 `docs/WINDOWS_REAL_INTEGRATION_REPORT.example.md` 模板。
 
 此版本没有 GUI、多机调度、废片识别、剪映集成、数据库或模型安装。项目作为独立的 `h3-batch-worker` 仓库发布；`.venv`、`runs`、`.env`、本地 `config.yaml` 和缓存不上传。
