@@ -38,7 +38,13 @@ def compile_batch(manifest_path: Path, config: Config) -> tuple[BatchReport, Wor
                 prompt = path.read_text(encoding="utf-8-sig")
             except (OSError, UnicodeError) as exc:
                 raise ConfigurationError("Cannot read Prompt input file") from exc
-            task = parse_prompt(shot["shot_id"], prompt, shot.get("seed"))
+            task = parse_prompt(
+                shot["shot_id"],
+                prompt,
+                shot.get("seed"),
+                duration_seconds=shot.get("duration"),
+                references=shot.get("references"),
+            )
             validate_task(task)
             assets = resolver.resolve(task.reference_slots)
             workflow = patcher.patch(task, {slot: path.as_posix() for slot, path in assets.items()})

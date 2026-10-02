@@ -7,4 +7,6 @@ dist/
 .env
 config.yaml
 runs/
+private/
+local/
 .DS_Store

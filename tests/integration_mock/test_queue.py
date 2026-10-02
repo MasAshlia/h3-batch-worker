@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from h3_worker.comfy_client import MockComfyClient
+from h3_worker.comfy_client import Completion, MockComfyClient
 from h3_worker.errors import ConfigurationError
 from h3_worker.models import TaskStatus
 from h3_worker.queue_manager import QueueManager
@@ -85,3 +85,35 @@ def test_upload_exception_does_not_stop_next_shot_or_leak_error(batch, tmp_path,
     assert record["shots"][0]["prompt_id"] is None
     assert record["shots"][1]["status"] == "SUCCESS"
     assert "secret-token" not in path.read_text(encoding="utf-8")
+
+
+def test_real_mode_records_history_video_and_shot_mapping(batch, tmp_path):
+    report, patcher = batch
+    report.items = report.items[:1]
+
+    class OutputClient(MockComfyClient):
+        def wait_for_completion(self, prompt_id, **kwargs):
+            kwargs["on_running"]()
+            return Completion(TaskStatus.SUCCESS, history={prompt_id: {
+                "status": {"status_str": "success", "completed": True},
+                "outputs": {"92": {"images": [{
+                    "filename": "REAL_TEST_S001.mp4", "subfolder": "", "type": "output",
+                }]}},
+            }})
+
+    (tmp_path / "REAL_TEST_S001.mp4").write_bytes(b"video")
+    debug = tmp_path / "debug"
+    _, record = QueueManager(
+        OutputClient(), patcher, tmp_path / "runs",
+        max_attempts=1,
+        require_queue_confirmation=True,
+        require_video_output=True,
+        debug_root=debug,
+        comfy_output=tmp_path,
+    ).run(report)
+    shot = record["shots"][0]
+    assert shot["output"] == {
+        "node_id": "92", "filename": "REAL_TEST_S001.mp4", "subfolder": "", "type": "output",
+    }
+    assert shot["submitted_at"] and shot["running_at"] and shot["completed_at"]
+    assert (debug / "history_S001.json").is_file()

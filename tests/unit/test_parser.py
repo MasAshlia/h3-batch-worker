@@ -5,6 +5,20 @@ from h3_worker.parser import parse_prompt
 from h3_worker.validator import validate_task
 
 
+def test_external_metadata_keeps_real_prompt_unchanged():
+    prompt = "镜头一：人物沿雨巷前行。\n\n镜头二：摄影机缓慢推进。"
+    task = parse_prompt(
+        "S001",
+        prompt,
+        duration_seconds=7,
+        references={"image_1": "reference_1", "image_2": "reference_2"},
+    )
+    assert task.prompt == prompt
+    assert task.duration_seconds == 7
+    assert task.steps == 21
+    assert task.references == {"image_1": "reference_1", "image_2": "reference_2"}
+
+
 def test_preserves_full_prompt_and_steps():
     prompt = "duration: 5\n@image_1: 林默\n@image_2: 客厅\n\n@image_1 进入 @image_2。\n"
     task = parse_prompt("S001", prompt)

@@ -20,3 +20,6 @@ workflow:
 paths:
   asset_manifest: ./fixtures/assets/asset_manifest.json
   output_root: ./runs
+  # Real integration only:
+  # debug_root: ./private/debug
+  # comfy_output: D:/path/to/ComfyUI/output

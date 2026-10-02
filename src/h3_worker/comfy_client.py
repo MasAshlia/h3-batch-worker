@@ -25,6 +25,42 @@ from .models import TaskStatus
 class Completion:
     status: TaskStatus
     error: dict | None = None
+    history: dict | None = None
+
+
+_VIDEO_SUFFIXES = {".mp4", ".webm", ".mov", ".mkv", ".avi"}
+
+
+def extract_video_output(history: dict, prompt_id: str) -> dict:
+    """Return the single video artifact described by a real history response."""
+    entry = history.get(prompt_id)
+    outputs = entry.get("outputs") if isinstance(entry, dict) else None
+    if not isinstance(outputs, dict):
+        raise ComfyClientError("ComfyUI history has no output object")
+    candidates = []
+    for node_id, node_output in outputs.items():
+        if not isinstance(node_id, str) or not isinstance(node_output, dict):
+            continue
+        for value in node_output.values():
+            if not isinstance(value, list):
+                continue
+            for item in value:
+                if not isinstance(item, dict) or not isinstance(item.get("filename"), str):
+                    continue
+                if Path(item["filename"]).suffix.lower() not in _VIDEO_SUFFIXES:
+                    continue
+                subfolder, output_type = item.get("subfolder", ""), item.get("type")
+                if not isinstance(subfolder, str) or not isinstance(output_type, str):
+                    raise ComfyClientError("Unsupported video output schema")
+                candidates.append({
+                    "node_id": node_id,
+                    "filename": item["filename"],
+                    "subfolder": subfolder,
+                    "type": output_type,
+                })
+    if len(candidates) != 1:
+        raise ComfyClientError("Expected exactly one video output in ComfyUI history")
+    return candidates[0]
 
 
 class ComfyClient(ABC):
@@ -68,9 +104,9 @@ class ComfyClient(ABC):
                     return Completion(TaskStatus.FAILED, {
                         "type": "ExecutionFailedError",
                         "message": "ComfyUI task execution failed",
-                    })
+                    }, history)
                 if status.get("status_str") == "success" and status.get("completed") is True:
-                    return Completion(TaskStatus.SUCCESS)
+                    return Completion(TaskStatus.SUCCESS, history=history)
                 if status.get("status_str") not in {"success", "error"}:
                     raise ComfyClientError("Unsupported ComfyUI history status schema")
             queue = self.get_queue()
@@ -162,10 +198,7 @@ class MockComfyClient(ComfyClient):
 
 
 class RealComfyClient(ComfyClient):
-    """Basic self-hosted HTTP adapter. Studio integration is NOT verified in V0.1.
-
-    V0.1 CLI deliberately requires --mock. No authentication or video download here.
-    """
+    """Self-hosted ComfyUI HTTP adapter for guarded single-shot integration."""
 
     def __init__(self, base_url: str, *, request_timeout: float = 30):
         try:
@@ -235,3 +268,21 @@ class RealComfyClient(ComfyClient):
 
     def get_history(self, prompt_id: str) -> dict:
         return self._request("/history/" + quote(prompt_id, safe=""))
+
+    def get_system_stats(self) -> dict:
+        return self._request("/system_stats")
+
+    def wait_for_completion(
+        self,
+        prompt_id: str,
+        *,
+        timeout: float = 3600,
+        poll_interval: float = 1.0,
+        on_running: Callable[[], None] | None = None,
+    ) -> Completion:
+        return super().wait_for_completion(
+            prompt_id,
+            timeout=timeout,
+            poll_interval=poll_interval,
+            on_running=on_running,
+        )

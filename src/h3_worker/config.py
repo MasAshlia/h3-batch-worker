@@ -32,6 +32,8 @@ class Config:
     mapping: dict
     asset_manifest: Path
     output_root: Path
+    debug_root: Path
+    comfy_output: Path | None
 
 
 def load_config(path: Path) -> Config:
@@ -52,12 +54,19 @@ def load_config(path: Path) -> Config:
             raise ConfigurationError("base_url must be an HTTP(S) URL without credentials")
         # Force validation of malformed port syntax without logging the URL.
         url.port
+        output_root = relative_path(path.parent, paths["output_root"])
+        debug_root = (
+            relative_path(path.parent, paths["debug_root"])
+            if paths.get("debug_root") else output_root.parent / "debug"
+        )
         return Config(
             base_url.rstrip("/"),
             relative_path(path.parent, workflow["template"]),
             mapping,
             relative_path(path.parent, paths["asset_manifest"]),
-            relative_path(path.parent, paths["output_root"]),
+            output_root,
+            debug_root,
+            relative_path(path.parent, paths["comfy_output"]) if paths.get("comfy_output") else None,
         )
     except (KeyError, TypeError, ValueError) as exc:
         raise ConfigurationError("Missing or invalid configuration fields") from exc
