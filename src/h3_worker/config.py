@@ -34,6 +34,8 @@ class Config:
     output_root: Path
     debug_root: Path
     comfy_output: Path | None
+    asset_roots: tuple[Path, ...]
+    asset_index: Path
 
 
 def load_config(path: Path) -> Config:
@@ -59,14 +61,30 @@ def load_config(path: Path) -> Config:
             relative_path(path.parent, paths["debug_root"])
             if paths.get("debug_root") else output_root.parent / "debug"
         )
+        asset_manifest = relative_path(path.parent, paths["asset_manifest"])
+        roots = paths.get("asset_roots")
+        if roots is None:
+            asset_roots = (asset_manifest.parent,)
+        elif isinstance(roots, list) and roots and all(isinstance(item, str) for item in roots):
+            asset_roots = tuple(relative_path(path.parent, item) for item in roots)
+        else:
+            raise ConfigurationError("paths.asset_roots must be a non-empty list")
         return Config(
-            base_url.rstrip("/"),
-            relative_path(path.parent, workflow["template"]),
-            mapping,
-            relative_path(path.parent, paths["asset_manifest"]),
-            output_root,
-            debug_root,
-            relative_path(path.parent, paths["comfy_output"]) if paths.get("comfy_output") else None,
+            base_url=base_url.rstrip("/"),
+            template_path=relative_path(path.parent, workflow["template"]),
+            mapping=mapping,
+            asset_manifest=asset_manifest,
+            output_root=output_root,
+            debug_root=debug_root,
+            comfy_output=(
+                relative_path(path.parent, paths["comfy_output"])
+                if paths.get("comfy_output") else None
+            ),
+            asset_roots=asset_roots,
+            asset_index=(
+                relative_path(path.parent, paths["asset_index"])
+                if paths.get("asset_index") else asset_manifest.parent / "asset_index.generated.json"
+            ),
         )
     except (KeyError, TypeError, ValueError) as exc:
         raise ConfigurationError("Missing or invalid configuration fields") from exc

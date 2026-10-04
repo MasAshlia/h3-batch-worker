@@ -1,11 +1,16 @@
 from datetime import datetime, timezone
+from dataclasses import replace
+from hashlib import sha256
 import json
 import logging
 from pathlib import Path
+import secrets
+import time
+from typing import Callable
 from uuid import uuid4
 
 from .comfy_client import ComfyClient, extract_video_output
-from .errors import ComfyClientError, ConfigurationError, WorkerError
+from .errors import ComfyClientError, ConfigurationError, UnknownSubmissionError, WorkerError
 from .models import BatchReport, TaskStatus
 from .workflow_patcher import WorkflowPatcher
 
@@ -26,8 +31,12 @@ class QueueManager:
         max_attempts: int = 2,
         require_queue_confirmation: bool = False,
         require_video_output: bool = False,
+        require_idle_before_each: bool = False,
+        stop_on_failure: bool = False,
+        output_wait_seconds: float = 60,
         debug_root: Path | None = None,
         comfy_output: Path | None = None,
+        on_run_created: Callable[[Path], None] | None = None,
     ):
         if max_attempts not in {1, 2}:
             raise ConfigurationError("max_attempts must be one or two")
@@ -35,31 +44,72 @@ class QueueManager:
         self.max_attempts = max_attempts
         self.require_queue_confirmation = require_queue_confirmation
         self.require_video_output = require_video_output
+        self.require_idle_before_each = require_idle_before_each
+        self.stop_on_failure = stop_on_failure
+        if output_wait_seconds < 0:
+            raise ConfigurationError("output_wait_seconds cannot be negative")
+        self.output_wait_seconds = output_wait_seconds
         self.debug_root = debug_root
         self.comfy_output = comfy_output
+        self.on_run_created = on_run_created
 
-    def run(self, report: BatchReport) -> tuple[Path, dict]:
+    def run(
+        self, report: BatchReport, *, generation_counts: dict[str, int] | None = None,
+    ) -> tuple[Path, dict]:
         if not report.ready:
             raise ConfigurationError("BATCH NOT READY: all tasks must pass preflight")
+        counts = generation_counts or {compiled.task.shot_id: 1 for compiled in report.tasks}
+        expected_ids = {compiled.task.shot_id for compiled in report.tasks}
+        if set(counts) != expected_ids or any(type(value) is not int or not 1 <= value <= 4
+                                              for value in counts.values()):
+            raise ConfigurationError("Generation counts must specify every shot with a value from one to four")
         run_dir = self.output_root / (datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ_") + uuid4().hex[:12])
         run_dir.mkdir(parents=True)
         run_path = run_dir / "run.json"
+        if self.on_run_created is not None:
+            self.on_run_created(run_path)
+        repair_offset = len(getattr(self.client, "repair_events", []))
+        planned = [
+            (compiled, generation_index, counts[compiled.task.shot_id])
+            for compiled in report.tasks
+            for generation_index in range(1, counts[compiled.task.shot_id] + 1)
+        ]
         record = {
             "batch_id": run_dir.name, "episode": report.episode,
             "started_at": _now(), "finished_at": None,
+            "repairs": [],
+            "planned_generations": len(planned),
             "shots": [{
                 "shot_id": compiled.task.shot_id,
+                "generation_index": generation_index,
+                "generation_count": generation_count,
+                "output_label": (
+                    f"{report.episode}_{compiled.task.shot_id}_V{generation_index:02d}"
+                ),
                 "prompt": compiled.task.prompt,
+                "original_prompt": compiled.task.original_prompt or compiled.task.prompt,
+                "original_prompt_sha256": sha256(
+                    (compiled.task.original_prompt or compiled.task.prompt).encode("utf-8")
+                ).hexdigest(),
+                "submitted_prompt": compiled.task.prompt,
+                "submitted_prompt_sha256": sha256(compiled.task.prompt.encode("utf-8")).hexdigest(),
+                "source_file": compiled.source_path.name if compiled.source_path else None,
                 "references": compiled.task.references.copy(),
                 "reference_slots": compiled.task.reference_slots,
+                "raw_duration": compiled.task.raw_duration_seconds,
                 "duration": compiled.task.duration_seconds, "steps": compiled.task.steps,
-                "seed": compiled.task.seed, "prompt_id": None,
+                "expected_frames": compiled.task.expected_frame_count,
+                "expected_output_seconds": compiled.task.expected_output_seconds,
+                "transformations": compiled.task.transformations.copy(),
+                "asset_mapping": compiled.asset_audit,
+                "workflow_reference_mapping": compiled.workflow_mapping,
+                "seed": None, "prompt_id": None,
                 "status": TaskStatus.VALIDATED, "retry_count": 0,
                 "started_at": None, "finished_at": None, "error": None,
                 "submitted_at": None, "running_at": None, "completed_at": None,
                 "output": None,
                 "attempts": [], "events": [],
-            } for compiled in report.tasks],
+            } for compiled, generation_index, generation_count in planned],
         }
 
         def save():
@@ -76,7 +126,7 @@ class QueueManager:
                 shot["submitted_at"] = event["at"]
             elif status == TaskStatus.RUNNING and shot["running_at"] is None:
                 shot["running_at"] = event["at"]
-            elif status in {TaskStatus.SUCCESS, TaskStatus.FAILED}:
+            elif status in {TaskStatus.SUCCESS, TaskStatus.FAILED, TaskStatus.UNKNOWN_SUBMISSION}:
                 shot["completed_at"] = event["at"]
             # No prompt, URL, exception body, token or absolute path in logs.
             _LOG.info("%s %s prompt_id=%s", shot["shot_id"], status, shot["prompt_id"] or "-")
@@ -89,9 +139,17 @@ class QueueManager:
         _LOG.setLevel(logging.INFO)
         try:
             save()
-            for compiled, shot in zip(report.tasks, record["shots"], strict=True):
+            for plan_index, ((compiled, generation_index, _), shot) in enumerate(
+                zip(planned, record["shots"], strict=True)
+            ):
                 transition(compiled, shot, TaskStatus.VALIDATED)
                 shot["started_at"] = _now()
+                if compiled.task.seed is None:
+                    seed = secrets.randbits(64) if self.patcher.seed_target is not None else None
+                else:
+                    seed = (compiled.task.seed + generation_index - 1) % (2 ** 64)
+                task = replace(compiled.task, seed=seed)
+                shot["seed"] = seed
                 for attempt_number in range(self.max_attempts):
                     if attempt_number:
                         shot["retry_count"] = 1
@@ -103,8 +161,14 @@ class QueueManager:
                     shot["attempts"].append(attempt)
                     save()
                     try:
+                        if self.require_idle_before_each:
+                            self.client.wait_for_idle()
+                        transition(compiled, shot, TaskStatus.UPLOADING)
                         images = {slot: self.client.upload_image(path) for slot, path in compiled.assets.items()}
-                        workflow = self.patcher.patch(compiled.task, images)
+                        workflow, workflow_mapping = self.patcher.patch_with_mapping(
+                            task, images, output_label=shot["output_label"],
+                        )
+                        shot["workflow_reference_mapping"] = workflow_mapping
                         shot["prompt_id"] = self.client.submit_prompt(workflow, shot_id=shot["shot_id"])
                         attempt["prompt_id"] = shot["prompt_id"]
                         attempt["status"] = TaskStatus.SUBMITTED
@@ -128,11 +192,16 @@ class QueueManager:
                         if completion.status not in {TaskStatus.SUCCESS, TaskStatus.FAILED}:
                             raise ConfigurationError("Completion must have a terminal status")
                         status, error = completion.status, completion.error
+                        if status == TaskStatus.SUCCESS:
+                            transition(compiled, shot, TaskStatus.FINALIZING)
                         if completion.history is not None and self.debug_root is not None:
                             self.debug_root.mkdir(parents=True, exist_ok=True)
+                            history_text = json.dumps(completion.history, ensure_ascii=False, indent=2)
                             (self.debug_root / f"history_{shot['shot_id']}.json").write_text(
-                                json.dumps(completion.history, ensure_ascii=False, indent=2),
-                                encoding="utf-8",
+                                history_text, encoding="utf-8",
+                            )
+                            (run_dir / f"history_{shot['shot_id']}.json").write_text(
+                                history_text, encoding="utf-8",
                             )
                         if status == TaskStatus.SUCCESS and self.require_video_output:
                             if completion.history is None:
@@ -141,11 +210,27 @@ class QueueManager:
                             if self.comfy_output is None:
                                 raise ConfigurationError("Real run requires paths.comfy_output")
                             output_path = self.comfy_output / output["subfolder"] / output["filename"]
-                            if not output_path.is_file() or output_path.stat().st_size <= 0:
-                                raise ComfyClientError("History video output does not exist or is empty")
+                            deadline = time.monotonic() + self.output_wait_seconds
+                            waited = False
+                            while not output_path.is_file() or output_path.stat().st_size <= 0:
+                                if time.monotonic() >= deadline:
+                                    raise ComfyClientError(
+                                        "History video output does not exist or is empty"
+                                    )
+                                waited = True
+                                time.sleep(min(1, max(0, deadline - time.monotonic())))
+                            if waited:
+                                record["repairs"].append({
+                                    "type": "output_file_wait", "shot_id": shot["shot_id"],
+                                    "status": "completed",
+                                })
                             shot["output"] = output
                     except WorkerError as exc:
-                        status, error = TaskStatus.FAILED, exc.to_dict()
+                        status = (
+                            TaskStatus.UNKNOWN_SUBMISSION
+                            if isinstance(exc, UnknownSubmissionError) else TaskStatus.FAILED
+                        )
+                        error = exc.to_dict()
                     except Exception:
                         # Isolate an unexpected client failure; do not expose arbitrary exception text.
                         status = TaskStatus.FAILED
@@ -153,15 +238,37 @@ class QueueManager:
                     attempt.update(status=status, error=error, finished_at=_now())
                     shot["error"] = error
                     transition(compiled, shot, status)
-                    if status == TaskStatus.SUCCESS:
+                    if status in {TaskStatus.SUCCESS, TaskStatus.UNKNOWN_SUBMISSION}:
                         break
                 shot["finished_at"] = _now()
                 save()
+                if self.stop_on_failure and shot["status"] in {
+                    TaskStatus.FAILED, TaskStatus.UNKNOWN_SUBMISSION,
+                }:
+                    for skipped in record["shots"][plan_index + 1:]:
+                        skipped["status"] = TaskStatus.SKIPPED
+                        skipped["finished_at"] = _now()
+                        skipped["completed_at"] = skipped["finished_at"]
+                        skipped["error"] = {
+                            "type": "EpisodeStoppedError",
+                            "message": "Skipped because an earlier generation failed",
+                        }
+                        skipped["events"].append({
+                            "at": skipped["finished_at"], "status": TaskStatus.SKIPPED,
+                            "prompt_id": None,
+                        })
+                    break
             record["finished_at"] = _now()
             record["summary"] = {
                 "success": sum(shot["status"] == TaskStatus.SUCCESS for shot in record["shots"]),
-                "failed": sum(shot["status"] == TaskStatus.FAILED for shot in record["shots"]),
+                "failed": sum(
+                    shot["status"] in {TaskStatus.FAILED, TaskStatus.UNKNOWN_SUBMISSION}
+                    for shot in record["shots"]
+                ),
             }
+            record["repairs"].extend(
+                getattr(self.client, "repair_events", [])[repair_offset:]
+            )
             save()
         finally:
             _LOG.removeHandler(handler)

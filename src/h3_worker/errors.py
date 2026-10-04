@@ -2,8 +2,15 @@
 
 
 class WorkerError(Exception):
+    def __init__(self, message: str, *, details: dict | None = None):
+        super().__init__(message)
+        self.details = details or {}
+
     def to_dict(self) -> dict:
-        return {"type": type(self).__name__, "message": str(self)}
+        result = {"type": type(self).__name__, "message": str(self)}
+        if self.details:
+            result["details"] = self.details
+        return result
 
 
 class MissingDurationError(WorkerError):
@@ -19,6 +26,10 @@ class InvalidPromptFormatError(WorkerError):
 
 
 class MissingAssetError(WorkerError):
+    pass
+
+
+class AmbiguousAssetError(WorkerError):
     pass
 
 
@@ -39,4 +50,8 @@ class ComfyClientError(WorkerError):
 
 
 class CompletionTimeoutError(ComfyClientError):
+    pass
+
+
+class UnknownSubmissionError(ComfyClientError):
     pass

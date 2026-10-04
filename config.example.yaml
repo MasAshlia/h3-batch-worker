@@ -19,6 +19,11 @@ workflow:
 
 paths:
   asset_manifest: ./fixtures/assets/asset_manifest.json
+  # Search roots are used only when an Asset ID is absent from the manual manifest.
+  # A match is accepted only when exactly one filename starts with the normalized ID.
+  # asset_roots:
+  #   - ./fixtures/assets
+  # asset_index: ./fixtures/assets/asset_index.generated.json
   output_root: ./runs
   # Real integration only:
   # debug_root: ./private/debug
