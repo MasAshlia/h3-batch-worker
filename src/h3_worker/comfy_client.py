@@ -1,4 +1,4 @@
-"""Mock client and an unverified-on-studio HTTP adapter using official routes.
+"""Mock client and a studio-verified single-shot HTTP adapter using official routes.
 
 https://docs.comfy.org/development/comfyui-server/comms_routes
 History/upload schemas checked against Comfy-Org/ComfyUI server.py and execution.py.
@@ -17,7 +17,7 @@ from urllib.parse import quote, urlsplit
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
-from .errors import ComfyClientError, CompletionTimeoutError
+from .errors import ComfyClientError, CompletionTimeoutError, UnknownSubmissionError
 from .models import TaskStatus
 
 
@@ -80,6 +80,19 @@ class ComfyClient(ABC):
     def get_history(self, prompt_id: str) -> dict:
         pass
 
+    def wait_for_idle(self, *, timeout: float = 3600, poll_interval: float = 1.0) -> None:
+        if timeout <= 0 or poll_interval <= 0:
+            raise ComfyClientError("Wait timeout and poll interval must be positive")
+        deadline = time.monotonic() + timeout
+        while True:
+            queue = self.get_queue()
+            if not queue["queue_running"] and not queue["queue_pending"]:
+                return
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise CompletionTimeoutError("Timed out waiting for ComfyUI queue to become idle")
+            time.sleep(min(poll_interval, remaining))
+
     def wait_for_completion(
         self,
         prompt_id: str,
@@ -101,10 +114,27 @@ class ComfyClient(ABC):
                 status = entry["status"]
                 # An execution error can have completed=false. It is still terminal.
                 if status.get("status_str") == "error":
-                    return Completion(TaskStatus.FAILED, {
+                    error = {
                         "type": "ExecutionFailedError",
                         "message": "ComfyUI task execution failed",
-                    }, history)
+                    }
+                    messages = status.get("messages", [])
+                    execution_error = next(
+                        (value for name, value in reversed(messages)
+                         if name == "execution_error" and isinstance(value, dict)),
+                        None,
+                    ) if isinstance(messages, list) else None
+                    if execution_error is not None:
+                        allowed = {
+                            key: execution_error[key]
+                            for key in (
+                                "node_id", "node_type", "exception_type", "exception_message",
+                            )
+                            if isinstance(execution_error.get(key), (str, int, float, bool))
+                        }
+                        if allowed:
+                            error["details"] = allowed
+                    return Completion(TaskStatus.FAILED, error, history)
                 if status.get("status_str") == "success" and status.get("completed") is True:
                     return Completion(TaskStatus.SUCCESS, history=history)
                 if status.get("status_str") not in {"success", "error"}:
@@ -214,17 +244,52 @@ class RealComfyClient(ComfyClient):
         self.base_url = base_url.rstrip("/")
         self.request_timeout = request_timeout
         self.client_id = str(uuid4())
+        self.repair_events = []
 
-    def _request(self, route: str, *, data: bytes | None = None, content_type: str = "application/json") -> dict:
-        request = Request(self.base_url + route, data=data, headers={"Content-Type": content_type})
-        try:
-            with urlopen(request, timeout=self.request_timeout) as response:
-                result = json.load(response)
-        except HTTPError as exc:
-            # Raw server bodies/URLs can contain secrets or local studio paths.
-            raise ComfyClientError(f"ComfyUI HTTP request failed (status {exc.code})") from None
-        except (URLError, OSError, ValueError) as exc:
-            raise ComfyClientError("ComfyUI transport or JSON response error") from None
+    def _request(
+        self,
+        route: str,
+        *,
+        data: bytes | None = None,
+        content_type: str = "application/json",
+        retryable: bool = False,
+        ambiguous_submission: bool = False,
+    ) -> dict:
+        result = None
+        for attempt in range(1, 4):
+            request = Request(self.base_url + route, data=data, headers={"Content-Type": content_type})
+            try:
+                with urlopen(request, timeout=self.request_timeout) as response:
+                    result = json.load(response)
+                break
+            except HTTPError as exc:
+                if ambiguous_submission and exc.code >= 500:
+                    raise UnknownSubmissionError(
+                        "Prompt submission response is unknown; automatic resubmission is disabled"
+                    ) from None
+                if retryable and exc.code >= 500 and attempt < 3:
+                    self.repair_events.append({
+                        "type": "http_retry", "operation": route.split("/")[1],
+                        "attempt": attempt + 1, "status": exc.code,
+                    })
+                    time.sleep((0.2, 0.5)[attempt - 1])
+                    continue
+                raise ComfyClientError(
+                    f"ComfyUI HTTP request failed (status {exc.code})"
+                ) from None
+            except (URLError, OSError, ValueError):
+                if ambiguous_submission:
+                    raise UnknownSubmissionError(
+                        "Prompt submission response is unknown; automatic resubmission is disabled"
+                    ) from None
+                if retryable and attempt < 3:
+                    self.repair_events.append({
+                        "type": "transport_retry", "operation": route.split("/")[1],
+                        "attempt": attempt + 1,
+                    })
+                    time.sleep((0.2, 0.5)[attempt - 1])
+                    continue
+                raise ComfyClientError("ComfyUI transport or JSON response error") from None
         if not isinstance(result, dict):
             raise ComfyClientError("ComfyUI response must be an object")
         return result
@@ -234,17 +299,27 @@ class RealComfyClient(ComfyClient):
         # Use a generated ASCII filename rather than exposing a local basename/path.
         filename = uuid4().hex + path.suffix.lower()
         content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
-        try:
-            content = path.read_bytes()
-        except OSError as exc:
-            raise ComfyClientError("Cannot read upload image") from exc
+        content = None
+        for attempt in range(1, 4):
+            try:
+                content = path.read_bytes()
+                break
+            except OSError as exc:
+                if attempt == 3:
+                    raise ComfyClientError("Cannot read upload image") from exc
+                self.repair_events.append({
+                    "type": "asset_read_retry", "file": path.name, "attempt": attempt + 1,
+                })
+                time.sleep((0.2, 0.5)[attempt - 1])
         body = (
             f'--{boundary}\r\nContent-Disposition: form-data; name="type"\r\n\r\ninput\r\n'
             f'--{boundary}\r\nContent-Disposition: form-data; name="image"; filename="{filename}"\r\n'
             f'Content-Type: {content_type}\r\n\r\n'
         ).encode("ascii") + content + f"\r\n--{boundary}--\r\n".encode("ascii")
-        result = self._request("/upload/image", data=body,
-                               content_type=f"multipart/form-data; boundary={boundary}")
+        result = self._request(
+            "/upload/image", data=body,
+            content_type=f"multipart/form-data; boundary={boundary}", retryable=True,
+        )
         name, folder = result.get("name"), result.get("subfolder", "")
         if (not isinstance(name, str) or not name or not isinstance(folder, str)
                 or result.get("type") != "input"):
@@ -252,25 +327,50 @@ class RealComfyClient(ComfyClient):
         return f"{folder}/{name}" if folder else name
 
     def submit_prompt(self, workflow: dict, *, shot_id: str) -> str:
-        result = self._request("/prompt", data=json.dumps({
-            "prompt": workflow, "client_id": self.client_id,
-        }).encode("utf-8"))
+        result = self._request(
+            "/prompt",
+            data=json.dumps({"prompt": workflow, "client_id": self.client_id}).encode("utf-8"),
+            ambiguous_submission=True,
+        )
         prompt_id = result.get("prompt_id")
         if result.get("error") or not isinstance(prompt_id, str) or not prompt_id:
             raise ComfyClientError("ComfyUI did not accept the workflow")
         return prompt_id
 
     def get_queue(self) -> dict:
-        result = self._request("/queue")
+        result = self._request("/queue", retryable=True)
         if not all(isinstance(result.get(key), list) for key in ("queue_running", "queue_pending")):
             raise ComfyClientError("Unsupported ComfyUI queue schema")
         return result
 
     def get_history(self, prompt_id: str) -> dict:
-        return self._request("/history/" + quote(prompt_id, safe=""))
+        return self._request("/history/" + quote(prompt_id, safe=""), retryable=True)
 
     def get_system_stats(self) -> dict:
-        return self._request("/system_stats")
+        return self._request("/system_stats", retryable=True)
+
+    def get_h3_reference_limit(self) -> int:
+        result = self._request(
+            "/object_info/MiniMaxH3ReferenceToVideo", retryable=True,
+        )
+        try:
+            maximum = result["MiniMaxH3ReferenceToVideo"]["input"]["optional"]["ref_images"][1][
+                "template"
+            ]["max"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise ComfyClientError("Unsupported MiniMax H3 object_info schema") from exc
+        if type(maximum) is not int or not 0 <= maximum <= 9:
+            raise ComfyClientError("Unsupported MiniMax H3 reference image limit")
+        return maximum
+
+    def wait_for_idle(self, *, timeout: float = 3600, poll_interval: float = 1.0) -> None:
+        queue = self.get_queue()
+        busy = bool(queue["queue_running"] or queue["queue_pending"])
+        if not busy:
+            return
+        self.repair_events.append({"type": "queue_wait", "status": "started"})
+        super().wait_for_idle(timeout=timeout, poll_interval=poll_interval)
+        self.repair_events.append({"type": "queue_wait", "status": "completed"})
 
     def wait_for_completion(
         self,

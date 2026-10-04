@@ -65,6 +65,17 @@ def test_batch_accepts_explicit_metadata_for_production_prompt(config, tmp_path)
     assert report.tasks[0].task.steps == 15
 
 
+def test_batch_accepts_inline_prompt(config, tmp_path):
+    manifest = tmp_path / "episode.json"
+    manifest.write_text(json.dumps({"episode": "INLINE", "shots": [{
+        "shot_id": "S001", "prompt": "人工粘贴的完整 Prompt", "duration": 5,
+        "references": {"image_1": "林默"},
+    }]}), encoding="utf-8")
+    report, _ = compile_batch(manifest, config)
+    assert report.ready
+    assert report.tasks[0].task.prompt == "人工粘贴的完整 Prompt"
+
+
 def test_collects_all_invalid_shots_and_does_not_guess(config, tmp_path):
     (tmp_path / "one.txt").write_text("@image_1: 林默", encoding="utf-8")
     (tmp_path / "two.txt").write_text("duration: 5\n@image_1: 雨夜街道", encoding="utf-8")

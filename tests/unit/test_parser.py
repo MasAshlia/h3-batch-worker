@@ -1,7 +1,7 @@
 import pytest
 
 from h3_worker.errors import InvalidPromptFormatError, MissingDurationError, MissingReferenceError
-from h3_worker.parser import parse_prompt
+from h3_worker.parser import parse_prompt, parse_shot_identity
 from h3_worker.validator import validate_task
 
 
@@ -17,6 +17,81 @@ def test_external_metadata_keeps_real_prompt_unchanged():
     assert task.duration_seconds == 7
     assert task.steps == 21
     assert task.references == {"image_1": "reference_1", "image_2": "reference_2"}
+
+
+def test_structured_h3_prompt_rounds_duration_and_skips_previous_tail():
+    prompt = """SHOT 33-16  THE APOLOGY
+SHOT DURATION: 5.88 seconds (141 frames at 24 fps).
+
+[UPLOAD MAPPING]
+Asset R01-V01 = <Picture 1> = <Subject 1> = (S1).
+<Picture 2> = previous shot final frame from SHOT 33-15.
+Asset R02-V01 = <Picture 3> = <Subject 2> = (S2).
+Asset S07 = <Picture 4> = <Subject 3> = (S3).
+
+[SUBJECT DEFINITIONS]
+Asset R02-V01: <Picture 3> and <Subject 2>.
+Asset S07: <Picture 4> and <Subject 3>.
+
+[PREVIOUS-TAIL-FRAME USE]
+Use <Picture 2> only for carried continuity.
+
+[SUMMARY]
+The apology.
+"""
+    task = parse_prompt("S33-16", prompt)
+    assert task.duration_seconds == 6
+    assert task.steps == 18
+    assert task.references == {
+        "image_1": "R01-V01", "image_2": "R02-V01", "image_3": "S07",
+    }
+    assert "previous shot final frame" not in task.prompt
+    assert "Asset R02-V01 = <Picture 2>" in task.prompt
+    assert "Asset S07 = <Picture 3>" in task.prompt
+    assert "No previous-shot final-frame input is provided" in task.prompt
+
+
+def test_duration_first_prompt_and_picture_first_assets_are_accepted():
+    prompt = """SHOT DURATION: 6.58 seconds (158 frames at 24 fps).
+
+SHOT 33-01 - THE ROOFTOP MEETING
+
+[UPLOAD MAPPING]
+<Picture 1> = Asset R01-V01.
+<Picture 2> = previous shot final frame from SHOT 32-10.
+<Picture 3> = Asset S07.
+
+[PROMPT]
+Use <Picture 1>, <Picture 2> and <Picture 3>.
+"""
+    assert parse_shot_identity(prompt) == ("EP33", "S33-1", 1)
+    task = parse_prompt("S33-1", prompt)
+    assert task.references == {"image_1": "R01-V01", "image_2": "S07"}
+    assert task.duration_seconds == 7
+    assert "previous shot final frame" not in task.prompt
+    assert "<Picture 2> = Asset S07." in task.prompt
+
+
+@pytest.mark.parametrize(
+    "raw,rounded,steps", [("5", 5, 15), ("5.01", 6, 18), ("8.99", 9, 27), ("9", 9, 27)],
+)
+def test_structured_duration_boundaries(raw, rounded, steps):
+    task = parse_prompt(
+        "S1", f"SHOT 1-1 TEST\nSHOT DURATION: {raw} seconds\n\n"
+        "[UPLOAD MAPPING]\nAsset R01 = <Picture 1>\n",
+    )
+    assert task.raw_duration_seconds == float(raw)
+    assert task.duration_seconds == rounded
+    assert task.steps == steps
+
+
+@pytest.mark.parametrize("raw", ["4.99", "9.01"])
+def test_structured_duration_outside_five_to_nine_is_rejected(raw):
+    with pytest.raises(InvalidPromptFormatError, match="between 5 and 9"):
+        parse_prompt(
+            "S1", f"SHOT 1-1 TEST\nSHOT DURATION: {raw} seconds\n\n"
+            "[UPLOAD MAPPING]\nAsset R01 = <Picture 1>\n",
+        )
 
 
 def test_preserves_full_prompt_and_steps():

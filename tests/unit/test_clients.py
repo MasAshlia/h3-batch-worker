@@ -8,7 +8,7 @@ import pytest
 
 import h3_worker.comfy_client as module
 from h3_worker.comfy_client import MockComfyClient, RealComfyClient, extract_video_output
-from h3_worker.errors import ComfyClientError, CompletionTimeoutError
+from h3_worker.errors import ComfyClientError, CompletionTimeoutError, UnknownSubmissionError
 from h3_worker.models import TaskStatus
 
 
@@ -91,6 +91,22 @@ def test_history_failure_with_completed_false_is_terminal(monkeypatch):
     assert client.wait_for_completion("pid").status == TaskStatus.FAILED
 
 
+def test_history_failure_exposes_safe_node_diagnostics(monkeypatch):
+    client = RealComfyClient("http://localhost:8188")
+    monkeypatch.setattr(client, "get_history", lambda pid: {pid: {"status": {
+        "status_str": "error", "completed": False, "messages": [["execution_error", {
+            "node_id": "136", "node_type": "MiniMaxH3ReferenceToVideo",
+            "exception_type": "ValueError", "exception_message": "invalid reference slot",
+            "traceback": ["private details are excluded"],
+        }]],
+    }}})
+    completion = client.wait_for_completion("pid")
+    assert completion.error["details"] == {
+        "node_id": "136", "node_type": "MiniMaxH3ReferenceToVideo",
+        "exception_type": "ValueError", "exception_message": "invalid reference slot",
+    }
+
+
 def test_history_incomplete_success_does_not_claim_completion(monkeypatch):
     client = RealComfyClient("http://localhost:8188")
     monkeypatch.setattr(client, "get_history", lambda pid: {
@@ -147,3 +163,50 @@ def test_extracts_real_save_video_history_shape():
 def test_real_wait_default_poll_interval_is_one_second():
     parameter = inspect.signature(RealComfyClient.wait_for_completion).parameters["poll_interval"]
     assert parameter.default == 1.0
+
+
+def test_safe_get_retries_three_times_and_records_repair(monkeypatch):
+    calls = 0
+
+    def transport(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls < 3:
+            raise URLError("temporary")
+        return BytesIO(b'{"queue_running":[],"queue_pending":[]}')
+
+    monkeypatch.setattr(module, "urlopen", transport)
+    monkeypatch.setattr(module.time, "sleep", lambda _: None)
+    client = RealComfyClient("http://localhost:8188")
+    assert client.get_queue() == {"queue_running": [], "queue_pending": []}
+    assert calls == 3
+    assert [event["attempt"] for event in client.repair_events] == [2, 3]
+
+
+def test_unknown_prompt_submission_is_never_retried(monkeypatch):
+    calls = 0
+
+    def transport(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        raise URLError("response lost")
+
+    monkeypatch.setattr(module, "urlopen", transport)
+    client = RealComfyClient("http://localhost:8188")
+    with pytest.raises(UnknownSubmissionError):
+        client.submit_prompt({}, shot_id="S1")
+    assert calls == 1
+
+
+def test_reads_live_h3_reference_limit(monkeypatch):
+    response = {
+        "MiniMaxH3ReferenceToVideo": {
+            "input": {"optional": {"ref_images": ["COMFY_AUTOGROW_V3", {
+                "template": {"max": 9},
+            }]}},
+        },
+    }
+    monkeypatch.setattr(
+        module, "urlopen", lambda *args, **kwargs: BytesIO(json.dumps(response).encode()),
+    )
+    assert RealComfyClient("http://localhost:8188").get_h3_reference_limit() == 9

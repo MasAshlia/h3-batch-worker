@@ -7,11 +7,19 @@ from .validator import validate_task
 
 
 class WorkflowPatcher:
-    def __init__(self, template: dict, mapping: dict):
+    def __init__(self, template: dict, mapping: dict, *, max_reference_images: int = 9):
         if not isinstance(template, dict) or not template:
             raise WorkflowError("Workflow must be a non-empty API-format node object")
+        if type(max_reference_images) is not int or not 0 <= max_reference_images <= 9:
+            raise WorkflowError("Reference image limit must be between zero and nine")
         self.template = deepcopy(template)
         self.mapping = deepcopy(mapping)
+        self.max_reference_images = max_reference_images
+        h3_nodes = [
+            node_id for node_id, node in self.template.items()
+            if isinstance(node, dict) and node.get("class_type") == "MiniMaxH3ReferenceToVideo"
+        ]
+        self.dynamic_reference_node = h3_nodes[0] if len(h3_nodes) == 1 else None
         allowed_keys = {
             "prompt_node", "reference_node", "duration_node", "scheduler_node",
             "prompt_input", "duration_input", "steps_input", "reference_inputs",
@@ -38,13 +46,17 @@ class WorkflowPatcher:
                         or not isinstance(target, dict) or set(target) != {"node", "input"}):
                     raise WorkflowError("Invalid explicit reference input mapping")
                 self.reference_targets[slot] = (target["node"], target["input"])
-        else:
-            if "reference_node" not in mapping:
-                raise WorkflowError("Missing reference_node or reference_inputs mapping")
+        elif "reference_node" in mapping:
             self.reference_targets = {
                 f"ref_image_{i}": (mapping["reference_node"], f"ref_image_{i}") for i in range(9)
             }
-        targets.extend(self.reference_targets.values())
+        elif self.dynamic_reference_node is not None:
+            self.reference_targets = {}
+        else:
+            if "reference_node" not in mapping:
+                raise WorkflowError("Missing reference_node or reference_inputs mapping")
+        if self.dynamic_reference_node is None:
+            targets.extend(self.reference_targets.values())
         self.seed_target = None
         if "seed_node" in mapping:
             self.seed_target = (mapping["seed_node"], mapping.get("seed_input", "seed"))
@@ -75,12 +87,18 @@ class WorkflowPatcher:
         if isinstance(node["inputs"][input_name], (list, dict)):
             raise WorkflowError("Mapping must target a literal input, never an existing node link")
 
-    def patch(self, task: ShotTask, image_values: dict[str, str]) -> dict:
+    def patch_with_mapping(
+        self, task: ShotTask, image_values: dict[str, str], *, output_label: str | None = None,
+    ) -> tuple[dict, dict]:
         validate_task(task)
         if set(image_values) != set(task.reference_slots):
             raise WorkflowError("Resolved image slots must match task references exactly")
-        if not set(image_values) <= set(self.reference_targets):
+        if self.dynamic_reference_node is None and not set(image_values) <= set(self.reference_targets):
             raise WorkflowError("Workflow mapping does not cover all task reference slots")
+        if len(image_values) > self.max_reference_images:
+            raise WorkflowError(
+                f"Workflow supports at most {self.max_reference_images} reference images"
+            )
         if task.seed is not None and self.seed_target is None:
             raise WorkflowError("Task seed requires seed_node mapping")
         workflow = deepcopy(self.template)
@@ -92,17 +110,60 @@ class WorkflowPatcher:
         write(self.prompt_target, task.prompt)
         write(self.duration_target, float(task.duration_seconds))
         write(self.steps_target, task.steps)
-        # Clear mapped unused slots so template example assets cannot leak into a shot.
-        for slot, target in self.reference_targets.items():
-            value = image_values.get(slot, "")
-            if not isinstance(value, str) or (slot in image_values and not value):
-                raise WorkflowError("Image input values must be non-empty strings")
-            write(target, value)
+        reference_mapping = {}
+        if self.dynamic_reference_node is not None:
+            h3_inputs = workflow[self.dynamic_reference_node]["inputs"]
+            for input_name in list(h3_inputs):
+                if re.fullmatch(
+                    r"(?:ref_images\.ref_image_|ref_videos\.ref_video_"
+                    r"|ref_video_audios\.ref_video_audio_|ref_audios\.ref_audio_)[0-9]+",
+                    input_name,
+                ):
+                    del h3_inputs[input_name]
+            numeric_ids = [int(node_id) for node_id in workflow if str(node_id).isdigit()]
+            next_node_id = max(numeric_ids, default=0) + 1
+            ordered_slots = sorted(image_values, key=lambda slot: int(slot.removeprefix("ref_image_")))
+            for picture_number, slot in enumerate(ordered_slots, 1):
+                value = image_values[slot]
+                if not isinstance(value, str) or not value:
+                    raise WorkflowError("Image input values must be non-empty strings")
+                load_node = str(next_node_id)
+                next_node_id += 1
+                workflow[load_node] = {
+                    "inputs": {"image": value},
+                    "class_type": "LoadImage",
+                    "_meta": {"title": f"AUTO Reference {picture_number}"},
+                }
+                h3_input = f"ref_images.ref_image_{picture_number}"
+                h3_inputs[h3_input] = [load_node, 0]
+                reference_mapping[slot] = {
+                    "picture_number": picture_number,
+                    "load_node": load_node,
+                    "load_input": "image",
+                    "h3_node": self.dynamic_reference_node,
+                    "h3_input": h3_input,
+                }
+        else:
+            # Clear mapped unused slots so template example assets cannot leak into a shot.
+            for slot, target in self.reference_targets.items():
+                value = image_values.get(slot, "")
+                if not isinstance(value, str) or (slot in image_values and not value):
+                    raise WorkflowError("Image input values must be non-empty strings")
+                write(target, value)
+                if slot in image_values:
+                    reference_mapping[slot] = {
+                        "load_node": target[0], "load_input": target[1],
+                    }
         if task.seed is not None:
             write(self.seed_target, task.seed)
         if self.output_target is not None and self.output_prefix is not None:
-            write(self.output_target, f"{self.output_prefix}_{task.shot_id}")
-        return workflow
+            write(self.output_target, f"{self.output_prefix}_{output_label or task.shot_id}")
+        return workflow, reference_mapping
+
+    def patch(
+        self, task: ShotTask, image_values: dict[str, str], *, output_label: str | None = None,
+    ) -> dict:
+        return self.patch_with_mapping(task, image_values, output_label=output_label)[0]
 
     @property
     def is_test_fixture(self) -> bool:
