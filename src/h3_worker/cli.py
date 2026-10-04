@@ -66,6 +66,7 @@ def _run_real_batch(config, report, patcher, client, *, wait_for_initial_idle: b
         stop_on_failure=True,
         debug_root=config.debug_root,
         comfy_output=config.comfy_output,
+        ffmpeg_executable=config.ffmpeg_executable,
     ).run(report)
 
 
