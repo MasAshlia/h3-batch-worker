@@ -24,6 +24,7 @@ class WorkflowPatcher:
             "prompt_node", "reference_node", "duration_node", "scheduler_node",
             "prompt_input", "duration_input", "steps_input", "reference_inputs",
             "seed_node", "seed_input", "output_node", "output_input", "output_prefix",
+            "continuity_input",
         }
         if (set(mapping) - allowed_keys
                 or ("seed_input" in mapping and "seed_node" not in mapping)
@@ -57,6 +58,13 @@ class WorkflowPatcher:
                 raise WorkflowError("Missing reference_node or reference_inputs mapping")
         if self.dynamic_reference_node is None:
             targets.extend(self.reference_targets.values())
+        self.continuity_target = None
+        if "continuity_input" in mapping:
+            target = mapping["continuity_input"]
+            if not isinstance(target, dict) or set(target) != {"node", "input"}:
+                raise WorkflowError("Invalid continuity_input mapping")
+            self.continuity_target = (target["node"], target["input"])
+            self._check_target(self.continuity_target)
         self.seed_target = None
         if "seed_node" in mapping:
             self.seed_target = (mapping["seed_node"], mapping.get("seed_input", "seed"))
@@ -89,6 +97,7 @@ class WorkflowPatcher:
 
     def patch_with_mapping(
         self, task: ShotTask, image_values: dict[str, str], *, output_label: str | None = None,
+        continuity_value: str | None = None,
     ) -> tuple[dict, dict]:
         validate_task(task)
         if set(image_values) != set(task.reference_slots):
@@ -154,6 +163,12 @@ class WorkflowPatcher:
                     reference_mapping[slot] = {
                         "load_node": target[0], "load_input": target[1],
                     }
+        if continuity_value is not None:
+            if self.continuity_target is None:
+                raise WorkflowError("Continuity value requires continuity_input mapping")
+            if not isinstance(continuity_value, str) or not continuity_value:
+                raise WorkflowError("Continuity input must be a non-empty string")
+            write(self.continuity_target, continuity_value)
         if task.seed is not None:
             write(self.seed_target, task.seed)
         if self.output_target is not None and self.output_prefix is not None:
@@ -162,8 +177,9 @@ class WorkflowPatcher:
 
     def patch(
         self, task: ShotTask, image_values: dict[str, str], *, output_label: str | None = None,
+        continuity_value: str | None = None,
     ) -> dict:
-        return self.patch_with_mapping(task, image_values, output_label=output_label)[0]
+        return self.patch_with_mapping(task, image_values, output_label=output_label, continuity_value=continuity_value)[0]
 
     @property
     def is_test_fixture(self) -> bool:

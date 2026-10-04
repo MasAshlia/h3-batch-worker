@@ -6,6 +6,8 @@ import logging
 from pathlib import Path
 import secrets
 import time
+import shutil
+import subprocess
 from typing import Callable
 from uuid import uuid4
 
@@ -19,6 +21,17 @@ _LOG = logging.getLogger("h3_worker.queue")
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _extract_last_frame(video_path: Path, *, boundary_dir: Path, executable: str = "ffmpeg") -> Path:
+    if shutil.which(executable) is None:
+        raise ComfyClientError("Configured ffmpeg executable is unavailable")
+    boundary_dir.mkdir(parents=True, exist_ok=True)
+    target = boundary_dir / "last_frame.png"
+    result = subprocess.run([executable, "-y", "-sseof", "-0.1", "-i", str(video_path), "-frames:v", "1", str(target)], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    if result.returncode != 0 or not target.is_file() or target.stat().st_size == 0:
+        raise ComfyClientError("Cannot extract final video frame")
+    return target
 
 
 class QueueManager:
@@ -37,6 +50,7 @@ class QueueManager:
         debug_root: Path | None = None,
         comfy_output: Path | None = None,
         on_run_created: Callable[[Path], None] | None = None,
+        ffmpeg_executable: str = "ffmpeg",
     ):
         if max_attempts not in {1, 2}:
             raise ConfigurationError("max_attempts must be one or two")
@@ -52,6 +66,7 @@ class QueueManager:
         self.debug_root = debug_root
         self.comfy_output = comfy_output
         self.on_run_created = on_run_created
+        self.ffmpeg_executable = ffmpeg_executable
 
     def run(
         self, report: BatchReport, *, generation_counts: dict[str, int] | None = None,
@@ -107,7 +122,7 @@ class QueueManager:
                 "status": TaskStatus.VALIDATED, "retry_count": 0,
                 "started_at": None, "finished_at": None, "error": None,
                 "submitted_at": None, "running_at": None, "completed_at": None,
-                "output": None,
+                "output": None, "boundary": None,
                 "attempts": [], "events": [],
             } for compiled, generation_index, generation_count in planned],
         }
@@ -139,6 +154,8 @@ class QueueManager:
         _LOG.setLevel(logging.INFO)
         try:
             save()
+            previous_boundary = None
+            previous_boundary_source = None
             for plan_index, ((compiled, generation_index, _), shot) in enumerate(
                 zip(planned, record["shots"], strict=True)
             ):
@@ -165,9 +182,17 @@ class QueueManager:
                             self.client.wait_for_idle()
                         transition(compiled, shot, TaskStatus.UPLOADING)
                         images = {slot: self.client.upload_image(path) for slot, path in compiled.assets.items()}
-                        workflow, workflow_mapping = self.patcher.patch_with_mapping(
-                            task, images, output_label=shot["output_label"],
+                        continuity_upload = (
+                            self.client.upload_image(previous_boundary)
+                            if previous_boundary is not None
+                            and previous_boundary_source != shot["shot_id"]
+                            else None
                         )
+                        workflow, workflow_mapping = self.patcher.patch_with_mapping(
+                            task, images, output_label=shot["output_label"], continuity_value=continuity_upload,
+                        )
+                        if continuity_upload is not None:
+                            shot["boundary"] = {"source": previous_boundary_source, "extracted_path": str(previous_boundary), "uploaded_server_filename": continuity_upload, "mode": "last_frame"}
                         shot["workflow_reference_mapping"] = workflow_mapping
                         shot["prompt_id"] = self.client.submit_prompt(workflow, shot_id=shot["shot_id"])
                         attempt["prompt_id"] = shot["prompt_id"]
@@ -225,6 +250,27 @@ class QueueManager:
                                     "status": "completed",
                                 })
                             shot["output"] = output
+                            if self.patcher.continuity_target is not None:
+                                boundary_dir = run_dir / "boundaries" / shot["shot_id"]
+                                try:
+                                    previous_boundary = _extract_last_frame(
+                                        output_path, boundary_dir=boundary_dir,
+                                        executable=self.ffmpeg_executable,
+                                    )
+                                except WorkerError:
+                                    raise
+                                except Exception as exc:
+                                    raise ComfyClientError(
+                                        "Cannot extract final video frame"
+                                    ) from exc
+                                previous_boundary_source = shot["shot_id"]
+                                if shot["boundary"] is None:
+                                    shot["boundary"] = {
+                                        "source": shot["shot_id"],
+                                        "extracted_path": str(previous_boundary),
+                                        "uploaded_server_filename": None,
+                                        "mode": "last_frame",
+                                    }
                     except WorkerError as exc:
                         status = (
                             TaskStatus.UNKNOWN_SUBMISSION
@@ -242,7 +288,7 @@ class QueueManager:
                         break
                 shot["finished_at"] = _now()
                 save()
-                if self.stop_on_failure and shot["status"] in {
+                if (self.stop_on_failure or self.patcher.continuity_target is not None) and shot["status"] in {
                     TaskStatus.FAILED, TaskStatus.UNKNOWN_SUBMISSION,
                 }:
                     for skipped in record["shots"][plan_index + 1:]:

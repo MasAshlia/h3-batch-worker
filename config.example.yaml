@@ -28,3 +28,4 @@ paths:
   # Real integration only:
   # debug_root: ./private/debug
   # comfy_output: D:/path/to/ComfyUI/output
+  # ffmpeg_executable: ffmpeg

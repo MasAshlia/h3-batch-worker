@@ -36,6 +36,7 @@ class Config:
     comfy_output: Path | None
     asset_roots: tuple[Path, ...]
     asset_index: Path
+    ffmpeg_executable: str
 
 
 def load_config(path: Path) -> Config:
@@ -81,6 +82,7 @@ def load_config(path: Path) -> Config:
                 if paths.get("comfy_output") else None
             ),
             asset_roots=asset_roots,
+            ffmpeg_executable=paths.get("ffmpeg_executable", "ffmpeg"),
             asset_index=(
                 relative_path(path.parent, paths["asset_index"])
                 if paths.get("asset_index") else asset_manifest.parent / "asset_index.generated.json"
