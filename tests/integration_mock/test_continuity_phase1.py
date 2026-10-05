@@ -83,3 +83,26 @@ def test_boundary_extraction_failure_fails_episode(monkeypatch, tmp_path):
     assert record["summary"] == {"success": 0, "failed": 1}
     assert record["shots"][0]["status"] == TaskStatus.FAILED
     assert record["shots"][1]["status"] == TaskStatus.SKIPPED
+
+
+def test_missing_continuity_removes_linked_load_image_from_h3():
+    template = _template()
+    template["4"]["class_type"] = "LoadImage"
+    template["4"]["inputs"] = {"image": "empty.png"}
+    template["5"] = {"class_type": "Refs", "inputs": {"ref_image_0": ""}}
+    template["6"] = {
+        "class_type": "MiniMaxH3ReferenceToVideo",
+        "inputs": {"ref_images.ref_image_1": ["4", 0]},
+    }
+    mapping = {**_mapping(), "reference_inputs": {"ref_image_0": {"node": "5", "input": "ref_image_0"}}, "continuity_input": {"node": "4", "input": "image"}}
+    patcher = WorkflowPatcher(template, mapping)
+    task = parse_prompt("S001", "duration: 5\n@image_1: asset\n\nbody")
+
+    workflow, _ = patcher.patch_with_mapping(task, {"ref_image_0": "mock/asset.png"})
+
+    assert all(
+        not (isinstance(value, list) and value[:1] == ["4"])
+        for node in workflow.values()
+        if isinstance(node, dict)
+        for value in node.get("inputs", {}).values()
+    )
