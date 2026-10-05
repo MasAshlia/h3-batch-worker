@@ -122,6 +122,14 @@ class WorkflowPatcher:
         reference_mapping = {}
         if self.dynamic_reference_node is not None:
             h3_inputs = workflow[self.dynamic_reference_node]["inputs"]
+            continuity_links = {
+                input_name: link for input_name, link in h3_inputs.items()
+                if (continuity_value is not None
+                    and input_name.startswith("ref_images.ref_image_")
+                    and isinstance(link, list)
+                    and self.continuity_target is not None
+                    and link[:1] == [self.continuity_target[0]])
+            }
             for input_name in list(h3_inputs):
                 if re.fullmatch(
                     r"(?:ref_images\.ref_image_|ref_videos\.ref_video_"
@@ -152,6 +160,7 @@ class WorkflowPatcher:
                     "h3_node": self.dynamic_reference_node,
                     "h3_input": h3_input,
                 }
+            h3_inputs.update(continuity_links)
         else:
             # Clear mapped unused slots so template example assets cannot leak into a shot.
             for slot, target in self.reference_targets.items():
@@ -163,6 +172,15 @@ class WorkflowPatcher:
                     reference_mapping[slot] = {
                         "load_node": target[0], "load_input": target[1],
                     }
+        if continuity_value is None and self.continuity_target is not None:
+            continuity_node, _ = self.continuity_target
+            for node in workflow.values():
+                if isinstance(node, dict) and node.get("class_type") == "MiniMaxH3ReferenceToVideo":
+                    inputs = node.get("inputs", {})
+                    for input_name, link in list(inputs.items()):
+                        if (input_name.startswith("ref_images.ref_image_")
+                                and isinstance(link, list) and link[:1] == [continuity_node]):
+                            del inputs[input_name]
         if continuity_value is not None:
             if self.continuity_target is None:
                 raise WorkflowError("Continuity value requires continuity_input mapping")

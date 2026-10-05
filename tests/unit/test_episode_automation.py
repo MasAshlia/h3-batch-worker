@@ -163,3 +163,19 @@ def test_episode_folder_rejects_mixed_episode_before_execution(config, tmp_path)
     (folder / "wrong.txt").write_text(_prompt(34, 1, ["R01"]), encoding="utf-8")
     with pytest.raises(ConfigurationError, match="does not match"):
         compile_episode_folder(folder, config)
+
+@pytest.mark.parametrize("continuity_value, expected", [("tail.png", ["8", 0]), (None, None)])
+def test_dynamic_rebuild_handles_continuity_ref_link(continuity_value, expected):
+    template = _dynamic_template()
+    template["10"]["inputs"]["ref_images.ref_image_3"] = ["8", 0]
+    patcher = WorkflowPatcher(
+        template,
+        {**_dynamic_mapping(), "continuity_input": {"node": "8", "input": "image"}},
+    )
+    task = parse_prompt("S1", "body", duration_seconds=5, references={"image_1": "R1"})
+
+    workflow = patcher.patch(
+        task, {"ref_image_0": "upload/one.png"}, continuity_value=continuity_value,
+    )
+
+    assert workflow["10"]["inputs"].get("ref_images.ref_image_3") == expected
