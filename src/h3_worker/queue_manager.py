@@ -4,6 +4,7 @@ from hashlib import sha256
 import json
 import logging
 from pathlib import Path
+import re
 import secrets
 import time
 import shutil
@@ -70,6 +71,7 @@ class QueueManager:
 
     def run(
         self, report: BatchReport, *, generation_counts: dict[str, int] | None = None,
+        run_name: str | None = None,
     ) -> tuple[Path, dict]:
         if not report.ready:
             raise ConfigurationError("BATCH NOT READY: all tasks must pass preflight")
@@ -78,6 +80,13 @@ class QueueManager:
         if set(counts) != expected_ids or any(type(value) is not int or not 1 <= value <= 4
                                               for value in counts.values()):
             raise ConfigurationError("Generation counts must specify every shot with a value from one to four")
+        if run_name is not None:
+            if not isinstance(run_name, str) or not run_name.strip():
+                raise ConfigurationError("Run name must be a non-empty string")
+            run_name = run_name.strip()
+            if len(run_name) > 80 or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 _-]*", run_name):
+                raise ConfigurationError("Run name may contain letters, numbers, spaces, underscores, and hyphens")
+        run_slug = re.sub(r"[^A-Za-z0-9]+", "_", run_name or report.episode).strip("_")
         run_dir = self.output_root / (datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ_") + uuid4().hex[:12])
         run_dir.mkdir(parents=True)
         run_path = run_dir / "run.json"
@@ -91,6 +100,7 @@ class QueueManager:
         ]
         record = {
             "batch_id": run_dir.name, "episode": report.episode,
+            "run_name": run_name or report.episode,
             "started_at": _now(), "finished_at": None,
             "repairs": [],
             "planned_generations": len(planned),
@@ -99,7 +109,7 @@ class QueueManager:
                 "generation_index": generation_index,
                 "generation_count": generation_count,
                 "output_label": (
-                    f"{report.episode}_{compiled.task.shot_id}_V{generation_index:02d}"
+                    f"{run_slug}_{compiled.task.shot_id}_V{generation_index:02d}"
                 ),
                 "prompt": compiled.task.prompt,
                 "original_prompt": compiled.task.original_prompt or compiled.task.prompt,
