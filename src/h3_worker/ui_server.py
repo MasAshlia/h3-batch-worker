@@ -192,7 +192,7 @@ class UiController:
             )
         return response
 
-    def start(self, preflight_id: str, generation_counts: dict) -> dict:
+    def start(self, preflight_id: str, generation_counts: dict, run_name: str | None = None) -> dict:
         with self._lock:
             preflight = self._preflights.get(preflight_id)
             if preflight is None:
@@ -225,7 +225,7 @@ class UiController:
             self._active_session = session_path
             self._service_error = None
             thread = threading.Thread(
-                target=self._run, args=(preflight, dict(generation_counts)), daemon=True,
+                target=self._run, args=(preflight, dict(generation_counts), run_name), daemon=True,
             )
             self._active_thread = thread
             thread.start()
@@ -247,7 +247,7 @@ class UiController:
             session.update(updates)
             _write_json(path, session)
 
-    def _run(self, preflight: _Preflight, generation_counts: dict) -> None:
+    def _run(self, preflight: _Preflight, generation_counts: dict, run_name: str | None = None) -> None:
         try:
             client = RealComfyClient(self.config.base_url)
             reference_limit = client.get_h3_reference_limit()
@@ -292,7 +292,7 @@ class UiController:
                     debug_root=self.config.debug_root,
                     comfy_output=self.config.comfy_output,
                     on_run_created=created,
-                ).run(report, generation_counts=episode_counts)
+                ).run(report, generation_counts=episode_counts, run_name=run_name)
                 if record["summary"]["failed"]:
                     raise ConfigurationError(
                         "Production stopped after an episode generation failed",
@@ -452,7 +452,7 @@ class UiHandler(BaseHTTPRequestHandler):
                 self._json(self.controller.preflight(body.get("files")))
             elif self.path == "/api/runs":
                 self._json(self.controller.start(
-                    body.get("preflight_id"), body.get("generation_counts"),
+                    body.get("preflight_id"), body.get("generation_counts"), body.get("run_name"),
                 ), HTTPStatus.ACCEPTED)
             else:
                 self.send_error(HTTPStatus.NOT_FOUND)
