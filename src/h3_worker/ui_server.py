@@ -182,7 +182,7 @@ class UiController:
                     if shot_id in seen:
                         raise ConfigurationError(f"Duplicate shot in upload: {shot_id}")
                     seen.add(shot_id)
-                    (source / f"SHOT_{order:04d}.txt").write_text(prompt, encoding="utf-8")
+                    (source / f"SHOT_{order:04d}_{shot_id}.txt").write_text(prompt, encoding="utf-8")
                 report, _ = compile_episode_folder(
                     source, self.config, max_reference_images=reference_limit,
                 )
