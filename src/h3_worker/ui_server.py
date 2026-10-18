@@ -27,7 +27,14 @@ from .parser import parse_shot_identity
 from .queue_manager import QueueManager
 
 
-_SHOT_START = re.compile(r"^SHOT\s+[0-9]+-[0-9]+\b", re.IGNORECASE)
+_SHOT_HEADER = re.compile(
+    r"^\s*(?:#+\s*)?SHOT\s+(?:[0-9]+-[0-9]+|EP[0-9]+-S[0-9]+[A-Z]?)\b",
+    re.IGNORECASE,
+)
+_SHOT_START = re.compile(
+    r"^\s*(?:#+\s*)?SHOT\s+(?:[0-9]+-[0-9]+|EP[0-9]+-S[0-9]+[A-Z]?)\b[^\r\n]*\bSTART\b",
+    re.IGNORECASE,
+)
 _EPISODE = re.compile(r"^SHOT\s+([0-9]+)-[0-9]+\b", re.IGNORECASE)
 
 
@@ -44,17 +51,22 @@ def _write_json(path: Path, value: dict) -> None:
 def split_episode_text(text: str) -> list[str]:
     """Split shot-first and duration-first production master TXT files."""
     lines = text.replace("\r\n", "\n").replace("\r", "\n").splitlines(keepends=True)
-    starts = []
-    for index, line in enumerate(lines):
-        current = line.strip()
-        next_nonempty = next(
-            (candidate.strip() for candidate in lines[index + 1:] if candidate.strip()), "",
-        )
-        if (_SHOT_START.match(current) and next_nonempty.upper().startswith("SHOT DURATION:")):
-            starts.append(index)
-        elif (current.upper().startswith("SHOT DURATION:")
-              and _SHOT_START.match(next_nonempty)):
-            starts.append(index)
+    explicit_starts = [index for index, line in enumerate(lines) if _SHOT_START.match(line.strip())]
+    if explicit_starts:
+        starts = explicit_starts
+    else:
+        starts = []
+    if not starts:
+        for index, line in enumerate(lines):
+            current = line.strip()
+            next_nonempty = next(
+                (candidate.strip() for candidate in lines[index + 1:] if candidate.strip()), "",
+            )
+            if (_SHOT_HEADER.match(current) and next_nonempty.upper().startswith("SHOT DURATION:")):
+                starts.append(index)
+            elif (current.upper().startswith("SHOT DURATION:")
+                  and _SHOT_HEADER.match(next_nonempty)):
+                starts.append(index)
     if not starts:
         raise ConfigurationError("TXT contains no recognizable SHOT / SHOT DURATION pair")
     starts = sorted(set(starts))

@@ -36,12 +36,17 @@ def _structured_h3_metadata(prompt: str) -> tuple[float, int, dict[str, str], st
         return None
     if len(duration_matches) != 1:
         raise MissingDurationError("Structured H3 Prompt requires one SHOT DURATION line")
-    if mapping_match is None:
-        raise MissingReferenceError("Structured H3 Prompt requires an UPLOAD MAPPING section")
+    mapping_lines = (
+        mapping_match.group(1).splitlines()
+        if mapping_match is not None
+        else [line for line in prompt.splitlines() if _PICTURE_ASSET.fullmatch(line.strip())]
+    )
+    if not mapping_lines:
+        raise MissingReferenceError("Structured H3 Prompt requires an UPLOAD MAPPING section or Picture mappings")
 
     assets = []
     previous_pictures = set()
-    for raw in mapping_match.group(1).splitlines():
+    for raw in mapping_lines:
         line = raw.strip()
         if not line:
             continue
@@ -210,15 +215,24 @@ def parse_prompt(
     )
 
 
-_SHOT_HEADER = re.compile(r"^SHOT\s+([0-9]+)-([0-9]+)\b", re.IGNORECASE | re.MULTILINE)
+_SHOT_HEADER = re.compile(
+    r"^\s*(?:#+\s*)?SHOT\s+(?:(?P<episode>[0-9]+)-(?P<number>[0-9]+)(?P<suffix>[A-Z]?)|"
+    r"EP(?P<episode_ep>[0-9]+)-S(?P<number_ep>[0-9]+)(?P<suffix_ep>[A-Z]?))\b[^\r\n]*",
+    re.IGNORECASE | re.MULTILINE,
+)
 
 
 def parse_shot_identity(prompt: str) -> tuple[str, str, int]:
     if not isinstance(prompt, str):
         raise InvalidPromptFormatError("Prompt must be text")
     matches = list(_SHOT_HEADER.finditer(prompt))
+    start_matches = [match for match in matches if re.search(r"\bSTART\b", match.group(0), re.IGNORECASE)]
+    if start_matches:
+        matches = start_matches
     if len(matches) != 1:
-        raise InvalidPromptFormatError("Prompt must contain exactly one SHOT <episode>-<shot> line")
+        raise InvalidPromptFormatError("Prompt must contain exactly one SHOT identity line")
     match = matches[0]
-    episode_number, shot_number = int(match[1]), int(match[2])
-    return f"EP{episode_number}", f"S{episode_number}-{shot_number}", shot_number
+    episode_number = int(match.group("episode") or match.group("episode_ep"))
+    shot_number = int(match.group("number") or match.group("number_ep"))
+    suffix = (match.group("suffix") or match.group("suffix_ep") or "").upper()
+    return f"EP{episode_number}", f"S{episode_number}-{shot_number}{suffix}", shot_number
