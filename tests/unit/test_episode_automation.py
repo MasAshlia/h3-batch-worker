@@ -82,6 +82,17 @@ def test_unique_scan_cache_and_changed_file_invalidation(tmp_path):
     assert resolver.resolve_detailed({"ref_image_0": "R06"})[1]["ref_image_0"]["source"] == "unique_scan"
 
 
+def test_empty_manifest_allows_unique_asset_scan(tmp_path):
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text("{}", encoding="utf-8")
+    asset = tmp_path / "R01-V01_Kane.png"
+    asset.write_bytes(b"image")
+
+    resolved = AssetResolver(manifest, asset_roots=(tmp_path,)).resolve({"ref_image_0": "R01-V01"})
+
+    assert resolved["ref_image_0"] == asset
+
+
 def test_scan_rejects_zero_and_ambiguous_candidates(tmp_path):
     manifest = tmp_path / "manifest.json"
     manifest.write_text('{"MANUAL":"manual.png"}', encoding="utf-8")

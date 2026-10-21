@@ -4,13 +4,13 @@ chcp 65001 >nul
 cd /d "%~dp0"
 
 if not exist ".venv\Scripts\python.exe" (
-  echo ERROR: .venv not found. Run test-windows.cmd first.
+  echo ERROR: .venv not found. Run setup-production.cmd first.
   pause
   exit /b 1
 )
 
 if not exist "private\config.windows.yaml" (
-  echo ERROR: private\config.windows.yaml not found.
+  echo ERROR: private\config.windows.yaml not found. Run setup-production.cmd first.
   pause
   exit /b 1
 )

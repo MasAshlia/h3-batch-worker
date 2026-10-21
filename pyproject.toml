@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "h3-batch-worker"
-version = "0.1.0"
-description = "H3 batch compilation and mock scheduling: Mac Logic PoC"
+version = "0.3.0"
+description = "Production-safe ComfyUI MiniMax H3 episode batch worker"
 requires-python = ">=3.12"
 dependencies = ["PyYAML>=6,<7"]
 

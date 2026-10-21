@@ -40,8 +40,8 @@ class AssetResolver:
         index_path: Path | None = None,
     ):
         manifest = read_json(manifest_path, DuplicateAssetError)
-        if not isinstance(manifest, dict) or not manifest:
-            raise ConfigurationError("Asset manifest must be a non-empty object")
+        if not isinstance(manifest, dict):
+            raise ConfigurationError("Asset manifest must be an object")
         self.assets = {}
         for name, value in manifest.items():
             if not isinstance(name, str) or not name.strip() or name != name.strip():

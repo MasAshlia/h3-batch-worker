@@ -1,6 +1,6 @@
 # H3 剧集级全自动生成器
 
-V0.1 提供跨平台任务编译和 Mock 调度核心；V0.2 增加受限的 Windows 真实 ComfyUI 集成。
+V0.3 提供 Windows ComfyUI 生产入口、剧集 Prompt 预检、动态 Reference、串行生成、运行记录和可视化界面。
 
 已实现 TXT Prompt 自动解析、资产索引、整集预检、动态 Reference、顺序执行、保守自愈、失败隔离、运行记录和状态日志。旧 YAML/JSON 清单继续兼容。Python 3.12+；唯一运行依赖为 PyYAML，测试使用 pytest。
 
@@ -43,6 +43,21 @@ GitHub 仓库：`MasAshlia/h3-batch-worker`，为私有仓库，Windows 使用�
 后续更新可以在干净的 Git 工作目录执行 `git pull --ff-only`，再双击 `test-windows.cmd`。ZIP 方式重新下载到新目录即可。
 
 这些入口执行的是 **Windows 逻辑与 mock 冒烟测试**。真实 workflow 和 GPU 生成按本文的 Windows 集成步骤处理；Mac 验证不能代替 Windows 实机验证。
+
+## 其他工位部署生产版本
+
+仓库 `main` 分支就是当前生产版本。最省事的部署方式：在目标电脑登录有仓库权限的 GitHub 账号，下载并双击 `scripts/windows/download-production.cmd`。也可以直接克隆仓库后双击根目录的 `setup-production.cmd`。
+
+安装脚本只创建项目 `.venv`、安装本项目，并在首次运行时复制以下模板到被 Git 忽略的 `private/`；已有本机配置不会被覆盖：
+
+- `private/config.windows.yaml`
+- `private/production_h3_api.json`
+- `private/asset_manifest.json`
+- `private/inbox/`
+
+每台工位仍需单独准备相同的 ComfyUI H3 节点、模型和参考资产。默认假设 ComfyUI 位于 `D:/cm/ComfyUI_windows_portable/ComfyUI`；路径不同时编辑 `private/config.windows.yaml`。参考图片放入配置的 ComfyUI `input` 目录，文件名以 Asset ID 开头时系统会唯一匹配；歧义资产再写入 `private/asset_manifest.json` 精确指定。资产、模型、生成视频、Prompt、运行记录和本机绝对路径不会上传 GitHub。
+
+完成配置后，先启动 ComfyUI，再双击 `start-ui.cmd`。浏览器会打开 `http://127.0.0.1:8765/`。后续更新执行 `git pull --ff-only`，然后重新运行 `setup-production.cmd`；私有配置仍会保留。
 
 默认读取当前目录中的 `config.yaml`；不存在时读取 `config.example.yaml`。可复制示例为 `config.yaml`，或者显式指定：
 

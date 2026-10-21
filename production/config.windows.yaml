@@ -1,0 +1,31 @@
+comfyui:
+  base_url: http://127.0.0.1:8188
+
+workflow:
+  template: ./production_h3_api.json
+  mapping:
+    prompt_node: "138"
+    prompt_input: value
+    duration_node: "132"
+    duration_input: value
+    scheduler_node: "124"
+    steps_input: steps
+    seed_node: "129"
+    seed_input: noise_seed
+    output_node: "92"
+    output_input: filename_prefix
+    output_prefix: H3
+    reference_inputs:
+      ref_image_0: {node: "160", input: image}
+      ref_image_1: {node: "174", input: image}
+      ref_image_2: {node: "177", input: image}
+
+paths:
+  asset_manifest: ./asset_manifest.json
+  asset_roots:
+    - D:/cm/ComfyUI_windows_portable/ComfyUI/input
+  asset_index: ./asset_index.generated.json
+  output_root: ./runs
+  debug_root: ./debug
+  comfy_output: D:/cm/ComfyUI_windows_portable/ComfyUI/output
+  ffmpeg_executable: ffmpeg

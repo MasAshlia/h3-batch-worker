@@ -1,0 +1,787 @@
+{
+  "92": {
+    "inputs": {
+      "filename_prefix": "LMX",
+      "format": "auto",
+      "codec": "auto",
+      "video": [
+        "130",
+        0
+      ]
+    },
+    "class_type": "SaveVideo",
+    "_meta": {
+      "title": "保存视频"
+    }
+  },
+  "115": {
+    "inputs": {
+      "aspect_ratio": "9:16 (Portrait Widescreen)",
+      "megapixels": 0.4,
+      "multiple": 32
+    },
+    "class_type": "ResolutionSelector",
+    "_meta": {
+      "title": "Resolution Selector (Size)"
+    }
+  },
+  "119": {
+    "inputs": {
+      "vae_name": "minimax_h3_video_vae_fp16.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "加载VAE"
+    }
+  },
+  "120": {
+    "inputs": {
+      "vae_name": "minimax_h3_audio_vae_fp32.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "加载VAE"
+    }
+  },
+  "121": {
+    "inputs": {
+      "samples": [
+        "125",
+        0
+      ],
+      "vae": [
+        "120",
+        0
+      ]
+    },
+    "class_type": "VAEDecodeAudio",
+    "_meta": {
+      "title": "VAE解码（音频）"
+    }
+  },
+  "122": {
+    "inputs": {
+      "samples": [
+        "125",
+        0
+      ],
+      "vae": [
+        "119",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE解码"
+    }
+  },
+  "123": {
+    "inputs": {
+      "sampler_name": "res_multistep"
+    },
+    "class_type": "KSamplerSelect",
+    "_meta": {
+      "title": "K采样器选择"
+    }
+  },
+  "124": {
+    "inputs": {
+      "scheduler": "simple",
+      "steps": 22,
+      "denoise": 1.0,
+      "model": [
+        "127",
+        0
+      ]
+    },
+    "class_type": "BasicScheduler",
+    "_meta": {
+      "title": "基本调度器"
+    }
+  },
+  "125": {
+    "inputs": {
+      "noise": [
+        "129",
+        0
+      ],
+      "guider": [
+        "126",
+        0
+      ],
+      "sampler": [
+        "123",
+        0
+      ],
+      "sigmas": [
+        "124",
+        0
+      ],
+      "latent_image": [
+        "136",
+        1
+      ]
+    },
+    "class_type": "SamplerCustomAdvanced",
+    "_meta": {
+      "title": "自定义采样器（高级）"
+    }
+  },
+  "126": {
+    "inputs": {
+      "model": [
+        "127",
+        0
+      ],
+      "conditioning": [
+        "136",
+        0
+      ]
+    },
+    "class_type": "BasicGuider",
+    "_meta": {
+      "title": "基本引导器"
+    }
+  },
+  "127": {
+    "inputs": {
+      "unet_name": "minimax_h3_ref2va_pruned_int8_convrot.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "UNet加载器"
+    }
+  },
+  "128": {
+    "inputs": {
+      "clip_name": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+      "type": "minimax",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "加载CLIP"
+    }
+  },
+  "129": {
+    "inputs": {
+      "noise_seed": 1098311383992059
+    },
+    "class_type": "RandomNoise",
+    "_meta": {
+      "title": "随机噪波"
+    }
+  },
+  "130": {
+    "inputs": {
+      "fps": 24.0,
+      "bit_depth": 8,
+      "images": [
+        "122",
+        0
+      ],
+      "audio": [
+        "121",
+        0
+      ]
+    },
+    "class_type": "CreateVideo",
+    "_meta": {
+      "title": "创建视频"
+    }
+  },
+  "131": {
+    "inputs": {
+      "expression": "max(5, round(a * 24)) + (5 - (max(5, round(a * 24)) % 17)) % 17",
+      "values.a": [
+        "132",
+        0
+      ]
+    },
+    "class_type": "ComfyMathExpression",
+    "_meta": {
+      "title": "数学表达式"
+    }
+  },
+  "132": {
+    "inputs": {
+      "value": 7.0
+    },
+    "class_type": "PrimitiveFloat",
+    "_meta": {
+      "title": "Float (Duration)"
+    }
+  },
+  "136": {
+    "inputs": {
+      "prompt": [
+        "138",
+        0
+      ],
+      "width": [
+        "115",
+        0
+      ],
+      "height": [
+        "115",
+        1
+      ],
+      "length": [
+        "131",
+        1
+      ],
+      "ref_image_size": "match",
+      "clip": [
+        "128",
+        0
+      ],
+      "vae": [
+        "119",
+        0
+      ],
+      "audio_vae": [
+        "120",
+        0
+      ],
+      "ref_images.ref_image_1": [
+        "160",
+        0
+      ],
+      "ref_images.ref_image_2": [
+        "174",
+        0
+      ],
+      "ref_images.ref_image_3": [
+        "177",
+        0
+      ]
+    },
+    "class_type": "MiniMaxH3ReferenceToVideo",
+    "_meta": {
+      "title": "MiniMax H3 Reference to Video"
+    }
+  },
+  "137": {
+    "inputs": {
+      "image": "S01_School_Gate_v01.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "138": {
+    "inputs": {
+      "value": "SHOT 31-01  LILY UNDER THE AWNING\nSHOT DURATION: 6.58 seconds (158 frames at 24 fps).\n\nSHOT 31-01 — LILY UNDER THE AWNING\n\n[UPLOAD MAPPING]\nAsset R01-V03 = <Picture 1> = <Subject 1> = (S1).\nAsset S29 = <Picture 2> = <Subject 2> = (S2).\nAsset P03 = <Picture 3> = <Subject 3> = (S3).\n\n[SUBJECT DEFINITIONS]\nAsset R01-V03 / LILY_SUPERMARKET: <Picture 1> and <Subject 1> are the sole visual authority for Lily's exact identity and supermarket night-shift uniform.\nAsset S29 / RAIN_ALLEY: <Picture 2> and <Subject 2> are the sole visual authority for The exact rain alley geometry, connected awnings, road, curb, streetlights and building facades.\nAsset P03 / LILY_BACKPACK: <Picture 3> and <Subject 3> are the sole visual authority for Lily's exact worn backpack.\nText-only screenplay objects in this shot receive no Picture, Subject or invented asset ID.\n\n[SUMMARY]\nHeavy rain crosses the alley. Lily is already under the first awning, holding P03 tightly against her chest with both forearms. P03 remains fully supported by her arms. This shot performs only the visible screenplay beat defined in the timeline below and stops at the specified tail frame.\n\n[RETENTION ANALYSIS]\n- R01-V03 via <Picture 1> / <Subject 1>: retain only its stated identity, structure or location duty; do not transfer unrelated composition, text, lighting or layout from the reference image.\n- S29 via <Picture 2> / <Subject 2>: retain only its stated identity, structure or location duty; do not transfer unrelated composition, text, lighting or layout from the reference image.\n- P03 via <Picture 3> / <Subject 3>: retain only its stated identity, structure or location duty; do not transfer unrelated composition, text, lighting or layout from the reference image.\n- The previous-shot tail reference, when present, controls only carried continuity facts and never becomes a content asset or Subject.\n\n[DETAILED DESCRIPTION]\n\n[WORLD-SPACE LOCK]\nThe first shallow awning and the second awning are on the same side of S29, connected by one flooded run along the building line. The road and curb remain parallel to both awnings. Lily begins under the first awning. The road-side stopping point remains across from that awning. The action axis follows the alley length; cameras remain on the building-side half-plane unless a cut explicitly changes to a tighter same-side angle.\nNo character, fixed landmark or vehicle may jump position across a hard cut without a visible scripted movement.\n\n[CAMERA AND SHOT LANGUAGE]\n35mm wide establishing shot. Camera is under the first awning, 4.5m from Lily, lens center 1.55m high, facing diagonally along the alley toward the road. The awning edge runs across the upper foreground and the curb recedes behind Lily. Begin locked, then execute one 45cm slow push-in that stops when Lily becomes a medium-wide figure.\nThis camera choice provides a distinct narrative view from adjacent shots. No unplanned orbit, zoom, roll, crane, axis crossing, reframing or handheld shake.\n\n[PREVIOUS-TAIL-FRAME USE]\nNo previous-shot final-frame input is required. Establish the scripted opening state from the listed content assets.\n\n[PROP AND CONTACT STATE]\nP03 starts held against Lily's chest by both forearms and ends in the same support and contact state.\n\n[FRAME 0]\nBegin from the exact opening state stated at 0.00s. Preserve the listed asset identities, the scene geography, all current contacts and the prior emotional state. Do not stage a preparatory action before the timeline begins.\n\n[ACTION TIMELINE]\n0.00-2.00s: Heavy rain crosses the alley. Lily is already under the first awning, holding P03 tightly against her chest with both forearms. P03 remains fully supported by her arms.\n2.00-4.20s: She looks across the rain curtain and exhales once. Her feet and body position do not change.\n4.20-6.58s: A distant motorcycle engine approaches off-screen along the road. Lily raises her gaze toward the sound; no vehicle is visible before the final half-second.\n\n[PERFORMANCE]\nUse restrained, natural teen-drama acting. Speech is motivated by the screenplay line, with accurate speaker-only lip movement. Non-speaking characters respond only with the visible gaze, posture, breath or micro-expression described in the timeline. No improvised gesture may move a character or prop into a new state.\n\n[DIALOGUE]\nNo spoken dialogue. Do not add dialogue, narration or vocal reactions beyond natural breathing.\nUse only the exact scripted lines above. Do not paraphrase, repeat or add words.\n\n[PHYSICS AND MATERIAL RESPONSE]\nGravity, friction, wet fabric, rain, footsteps, doors, vehicles and handheld objects respond naturally. Contact must occur before load transfer. No floating, sliding without force, interpenetration, texture drift or spontaneous prop transfer.\n\n[LIGHTING AND COLOR]\nPreserve the screenplay time, weather and established light direction throughout the shot. Match exposure, wetness and color temperature to the previous tail reference when present. Do not introduce a new light source or a time-of-day jump.\n\n[OVERALL SOUNDSCAPE]\nHeavy rain, distant thunder and the black motorcycle engine approaching off-screen.\nAll sounds originate from visible actions or the scripted environment. Dialogue remains intelligible and spatially correct.\n\n[NON-DIEGETIC MUSIC]\nNone.\n\n[TAIL FRAME AND EDIT TRIGGER]\nLily remains under the first awning, still holding P03, eyes fixed toward the approaching engine direction.\nTransition: HARD CUT on the approaching engine growing louder. Shot 31-02 changes to a road-facing angle; do not replay Lily's sigh.\n\n[CONTINUITY LOCK]\nAuthorized content asset IDs for this shot: R01-V03, S29, P03.\nKeep identity, wardrobe, scene geometry, screen direction, eyelines, wetness, prop support, hand contact and lighting continuous. Any previous-shot final-frame Picture is opening continuity evidence only and must not be recreated at the ending.\n\n[SHOT VALIDATION]\nExactly one generated shot, 158 frames, 6.58 seconds at 24 fps, vertical 9:16. Use the specified camera pose and only the specified movement. Visible character count, asset bindings, dialogue speakers, action direction and tail condition must match this prompt. Timeline covers the final frame.\n\n[SHOT-SPECIFIC PROHIBITIONS]\nNo extra character, extra vehicle, extra prop, extra room, extra action beat, flashback, subtitle, generated readable long text, watermark, logo, slow motion, repeated action, identity drift, costume drift, axis crossing or camera movement beyond the specification. Do not show events after the stated transition."
+    },
+    "class_type": "PrimitiveStringMultiline",
+    "_meta": {
+      "title": "Input Text (Prompt)"
+    }
+  },
+  "139": {
+    "inputs": {
+      "image": "S02_Hallway_v01.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "141": {
+    "inputs": {
+      "image": "S03_Classroom_v01.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "142": {
+    "inputs": {
+      "image": "S03_V03_Classroom_Christmas.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "143": {
+    "inputs": {
+      "image": "S06_School_Library_v02.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "144": {
+    "inputs": {
+      "image": "S07_School_Rooftop_v01.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "145": {
+    "inputs": {
+      "image": "S07_V02_School_Rooftop_New_Year.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "146": {
+    "inputs": {
+      "image": "S10_Convenience_Store_Exterior_v01.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "147": {
+    "inputs": {
+      "image": "S11_Convenience_Store_Interior_v02.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "148": {
+    "inputs": {
+      "image": "S12_Lily_Apartment_Building_v01.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "149": {
+    "inputs": {
+      "image": "S13_Lily_Home_Living_Dining_v02.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "150": {
+    "inputs": {
+      "image": "S14_Lily_Bedroom_v02.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "151": {
+    "inputs": {
+      "image": "S16_School_Track_Athletics_Field_v01.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "152": {
+    "inputs": {
+      "image": "S18_School_Piano_Room_v01.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "153": {
+    "inputs": {
+      "image": "S27_Lily_Neighborhood_Route_v01.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "155": {
+    "inputs": {
+      "image": "S28_Night_Intersection_v01.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "156": {
+    "inputs": {
+      "image": "S30_Seagull_Bookstore_Exterior_v01.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "157": {
+    "inputs": {
+      "image": "S31_Seagull_Bookstore_Interior_v01.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "158": {
+    "inputs": {
+      "image": "S32_Seagull_Bookstore_Back_Room_v01.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "159": {
+    "inputs": {
+      "image": "R01_Lily_v02.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "160": {
+    "inputs": {
+      "image": "R01-V03_Lily_Supermarket_Uniform_v01.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "161": {
+    "inputs": {
+      "image": "R01-V04_Lily_Home_Casual_v01.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "162": {
+    "inputs": {
+      "image": "R02_Cole_v01.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "164": {
+    "inputs": {
+      "image": "R02-V02_Cole_Convenience_Uniform_v01.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "165": {
+    "inputs": {
+      "image": "R03_Maya_v01.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "166": {
+    "inputs": {
+      "image": "R05_Student_Extras_v01.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "167": {
+    "inputs": {
+      "image": "R06_Alex_v01.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "169": {
+    "inputs": {
+      "image": "R09_Lilys_Mother_v01.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "170": {
+    "inputs": {
+      "image": "R10_Gray_Suit_Man_v01.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "171": {
+    "inputs": {
+      "image": "R13_Third_Party_Follower_v01.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "172": {
+    "inputs": {
+      "image": "R14_Seagull_Bookstore_Owner_v01.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "173": {
+    "inputs": {
+      "image": "01 VALDRIS（大公_族长）.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "174": {
+    "inputs": {
+      "image": "S29_Rain_Alley_v01.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "175": {
+    "inputs": {
+      "image": "P01_Black_Motorcycle_v01.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "176": {
+    "inputs": {
+      "image": "P02_Black_Helmet_v01.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "177": {
+    "inputs": {
+      "image": "P03_Lily_Backpack_v01.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "178": {
+    "inputs": {
+      "image": "P09_Gray_Business_Card_Blank_v01.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "179": {
+    "inputs": {
+      "image": "P11_Project_Ark_Emblem_v01.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "180": {
+    "inputs": {
+      "image": "P19_Rusty_Floorboard_Metal_Box_v01.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "181": {
+    "inputs": {
+      "image": "P24_Dark_Gray_Wool_Scarf_v01.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "182": {
+    "inputs": {
+      "image": "P25_Old_Christmas_Book_and_Card_v01.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "183": {
+    "inputs": {
+      "image": "P10_Lily_Experiment_Notebook_v01.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "184": {
+    "inputs": {
+      "image": "P26_Project_Ark_Research_Folder_v01.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "185": {
+    "inputs": {
+      "image": "P27_Fathers_Laboratory_Photo_v01.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "186": {
+    "inputs": {
+      "image": "P28_Seagull_Bookstore_Archive_Folder_v01.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "187": {
+    "inputs": {
+      "image": "P29_Project_Ark_Lab_Journal_v01.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "188": {
+    "inputs": {
+      "image": "P30_Locker_7_Key_and_Tag_v01.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "189": {
+    "inputs": {
+      "image": "P37_Gray_Sedan_v01.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "190": {
+    "inputs": {
+      "image": "P38_Black_Debt_Collector_Sedan_v01.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "200": {
+    "inputs": {
+      "image": "pasted/image (51).png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "201": {
+    "inputs": {
+      "image": "pasted/image (52).png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "202": {
+    "inputs": {
+      "image": "pasted/image (53).png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "203": {
+    "inputs": {
+      "image": "pasted/image (54).png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "204": {
+    "inputs": {
+      "image": "pasted/image (55).png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "205": {
+    "inputs": {
+      "image": "pasted/image (56).png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "206": {
+    "inputs": {
+      "image": "pasted/image (57).png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "207": {
+    "inputs": {
+      "image": "pasted/image (59).png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  }
+}
