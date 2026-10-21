@@ -102,9 +102,17 @@ def _structured_h3_metadata(prompt: str) -> tuple[float, int, dict[str, str], st
         )
 
     raw_duration = float(duration_matches[0])
-    if not 5 <= raw_duration <= 9:
-        raise InvalidPromptFormatError("SHOT DURATION must be between 5 and 9 seconds")
-    duration = math.ceil(raw_duration)
+    if raw_duration <= 0:
+        raise InvalidPromptFormatError("SHOT DURATION must be positive")
+    # H3 production supports a 5–9 second grid. Keep the submitted Prompt
+    # byte-for-byte intact, but clamp out-of-grid source durations in runtime
+    # metadata so a production package can still be processed safely.
+    if raw_duration < 5:
+        duration = 5
+    elif raw_duration > 9:
+        duration = 9
+    else:
+        duration = math.ceil(raw_duration)
     references = {
         f"image_{number}": asset_id
         for number, (_, asset_id) in enumerate(assets, 1)
@@ -115,7 +123,7 @@ def _structured_h3_metadata(prompt: str) -> tuple[float, int, dict[str, str], st
     if any(original != new for new, (original, _) in enumerate(assets, 1)):
         transformations.append("renumbered_static_pictures")
     if raw_duration != duration:
-        transformations.append("rounded_duration_up")
+        transformations.append("rounded_duration_up" if 5 <= raw_duration <= 9 else "clamped_duration_to_h3_range")
     return raw_duration, duration, references, normalized, transformations
 
 

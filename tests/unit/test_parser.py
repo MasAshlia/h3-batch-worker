@@ -91,13 +91,14 @@ def test_structured_duration_boundaries(raw, rounded, steps):
     assert task.steps == steps
 
 
-@pytest.mark.parametrize("raw", ["4.99", "9.01"])
-def test_structured_duration_outside_five_to_nine_is_rejected(raw):
-    with pytest.raises(InvalidPromptFormatError, match="between 5 and 9"):
-        parse_prompt(
-            "S1", f"SHOT 1-1 TEST\nSHOT DURATION: {raw} seconds\n\n"
-            "[UPLOAD MAPPING]\nAsset R01 = <Picture 1>\n",
-        )
+@pytest.mark.parametrize(("raw", "expected"), [("4.99", 5), ("9.01", 9)])
+def test_structured_duration_outside_five_to_nine_is_clamped(raw, expected):
+    task = parse_prompt(
+        "S1", f"SHOT 1-1 TEST\nSHOT DURATION: {raw} seconds\n\n"
+        "[UPLOAD MAPPING]\nAsset R01 = <Picture 1>\n",
+    )
+    assert task.duration_seconds == expected
+    assert "clamped_duration_to_h3_range" in task.transformations
 
 
 def test_preserves_full_prompt_and_steps():
