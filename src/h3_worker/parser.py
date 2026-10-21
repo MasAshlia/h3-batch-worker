@@ -217,7 +217,8 @@ def parse_prompt(
 
 _SHOT_HEADER = re.compile(
     r"^\s*(?:#+\s*)?SHOT\s+(?:(?P<episode>[0-9]+)-(?P<number>[0-9]+)(?P<suffix>[A-Z]?)|"
-    r"EP(?P<episode_ep>[0-9]+)-S(?P<number_ep>[0-9]+)(?P<suffix_ep>[A-Z]?))\b[^\r\n]*",
+    r"EP(?P<episode_ep>[0-9]+)-S(?P<number_ep>[0-9]+)(?P<suffix_ep>[A-Z]?)|"
+    r"E(?P<episode_short>[0-9]+)-(?P<number_short>[0-9]+)(?P<suffix_short>[A-Z]?))\b[^\r\n]*",
     re.IGNORECASE | re.MULTILINE,
 )
 
@@ -232,7 +233,13 @@ def parse_shot_identity(prompt: str) -> tuple[str, str, int]:
     if len(matches) != 1:
         raise InvalidPromptFormatError("Prompt must contain exactly one SHOT identity line")
     match = matches[0]
-    episode_number = int(match.group("episode") or match.group("episode_ep"))
-    shot_number = int(match.group("number") or match.group("number_ep"))
-    suffix = (match.group("suffix") or match.group("suffix_ep") or "").upper()
+    episode_number = int(
+        match.group("episode") or match.group("episode_ep") or match.group("episode_short")
+    )
+    shot_number = int(
+        match.group("number") or match.group("number_ep") or match.group("number_short")
+    )
+    suffix = (
+        match.group("suffix") or match.group("suffix_ep") or match.group("suffix_short") or ""
+    ).upper()
     return f"EP{episode_number}", f"S{episode_number}-{shot_number}{suffix}", shot_number

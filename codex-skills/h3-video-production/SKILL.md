@@ -21,7 +21,7 @@ Resolve every attached Prompt and asset path first. Then run:
 py -3.12 <bridge-path> submit --prompt <prompt.txt> --asset <assets.zip> --run-name "A4 E15 HMS"
 ```
 
-- Repeat `--prompt` and `--asset` for multiple inputs. Assets may be ZIP files, directories, PNG, JPG, JPEG, or WEBP files.
+- Repeat `--prompt` and `--asset` for multiple inputs. Prompt files may be TXT or Markdown (including integrated `SHOT E16-01` episode files); assets may be ZIP files, directories, PNG, JPG, JPEG, or WEBP files.
 - Default to one generation per shot. Use `--count 2` for all shots or repeat `--shot-count S15-1=2` for overrides; only 1-4 are valid.
 - When the user asks only to inspect, analyze, or confirm mappings, add `--preflight-only`. When they explicitly ask to generate or produce, submit immediately after a successful preflight.
 - Preserve Prompt text. Never guess a missing or ambiguous Asset ID.

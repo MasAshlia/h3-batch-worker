@@ -39,6 +39,17 @@ def test_master_txt_accepts_duration_before_shot_and_multiple_episodes():
     assert "SHOT 34-1" in prompts[1]
 
 
+def test_master_markdown_splits_short_episode_headers():
+    text = (
+        "## SHOT E16-01 - START\nSHOT DURATION: 7 seconds\nBody\n"
+        "## SHOT E16-02 - START\nSHOT DURATION: 8 seconds\nBody\n"
+    )
+    prompts = split_episode_text(text)
+    assert len(prompts) == 2
+    assert prompts[0].startswith("## SHOT E16-01")
+    assert prompts[1].startswith("## SHOT E16-02")
+
+
 def test_ui_preflight_groups_multi_episode_master_without_rewriting(config, tmp_path, monkeypatch):
     asset = Path(__file__).resolve().parents[2] / "fixtures" / "assets" / "linmo.png"
     manifest = tmp_path / "assets.json"

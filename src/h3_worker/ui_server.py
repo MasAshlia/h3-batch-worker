@@ -28,11 +28,11 @@ from .queue_manager import QueueManager
 
 
 _SHOT_HEADER = re.compile(
-    r"^\s*(?:#+\s*)?SHOT\s+(?:[0-9]+-[0-9]+|EP[0-9]+-S[0-9]+[A-Z]?)\b",
+    r"^\s*(?:#+\s*)?SHOT\s+(?:[0-9]+-[0-9]+|EP[0-9]+-S[0-9]+[A-Z]?|E[0-9]+-[0-9]+[A-Z]?)\b",
     re.IGNORECASE,
 )
 _SHOT_START = re.compile(
-    r"^\s*(?:#+\s*)?SHOT\s+(?:[0-9]+-[0-9]+|EP[0-9]+-S[0-9]+[A-Z]?)\b[^\r\n]*\bSTART\b",
+    r"^\s*(?:#+\s*)?SHOT\s+(?:[0-9]+-[0-9]+|EP[0-9]+-S[0-9]+[A-Z]?|E[0-9]+-[0-9]+[A-Z]?)\b[^\r\n]*\bSTART\b",
     re.IGNORECASE,
 )
 _EPISODE = re.compile(r"^SHOT\s+([0-9]+)-[0-9]+\b", re.IGNORECASE)
@@ -188,7 +188,7 @@ class UiController:
             prompts = []
             for uploaded in files:
                 name, content = uploaded.get("name"), uploaded.get("text")
-                if (not isinstance(name, str) or Path(name).suffix.lower() != ".txt"
+                if (not isinstance(name, str) or Path(name).suffix.lower() not in {".txt", ".md"}
                         or not isinstance(content, str) or len(content.encode("utf-8")) > 5_000_000):
                     raise ConfigurationError("Prompt uploads must be UTF-8 TXT files under 5 MB")
                 prompts.extend(split_episode_text(content))

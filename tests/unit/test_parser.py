@@ -72,6 +72,12 @@ Use <Picture 1>, <Picture 2> and <Picture 3>.
     assert "<Picture 2> = Asset S07." in task.prompt
 
 
+def test_parse_shot_identity_accepts_short_episode_headers():
+    assert parse_shot_identity("## SHOT E16-01 - START\nSHOT DURATION: 7 seconds") == (
+        "EP16", "S16-1", 1,
+    )
+
+
 @pytest.mark.parametrize(
     "raw,rounded,steps", [("5", 5, 15), ("5.01", 6, 18), ("8.99", 9, 27), ("9", 9, 27)],
 )

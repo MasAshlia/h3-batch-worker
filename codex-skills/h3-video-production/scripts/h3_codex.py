@@ -20,7 +20,7 @@ import zipfile
 
 REPOSITORY = "https://github.com/MasAshlia/h3-batch-worker.git"
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
-PROMPT_SUFFIXES = {".txt", ".json", ".yaml", ".yml"}
+PROMPT_SUFFIXES = {".txt", ".md", ".json", ".yaml", ".yml"}
 MAX_FILES = 500
 MAX_UNCOMPRESSED_BYTES = 2_000_000_000
 
