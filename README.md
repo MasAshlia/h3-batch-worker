@@ -1,6 +1,6 @@
 # H3 剧集级全自动生成器
 
-V0.3 提供 Windows ComfyUI 生产入口、剧集 Prompt 预检、动态 Reference、串行生成、运行记录和可视化界面。
+V0.4 提供 Windows ComfyUI 生产入口、剧集 Prompt 预检、动态 Reference、串行生成、运行记录、可视化界面和 Codex 自动生产 Skill。
 
 已实现 TXT Prompt 自动解析、资产索引、整集预检、动态 Reference、顺序执行、保守自愈、失败隔离、运行记录和状态日志。旧 YAML/JSON 清单继续兼容。Python 3.12+；唯一运行依赖为 PyYAML，测试使用 pytest。
 
@@ -58,6 +58,10 @@ GitHub 仓库：`MasAshlia/h3-batch-worker`，为私有仓库，Windows 使用�
 每台工位仍需单独准备相同的 ComfyUI H3 节点、模型和参考资产。默认假设 ComfyUI 位于 `D:/cm/ComfyUI_windows_portable/ComfyUI`；路径不同时编辑 `private/config.windows.yaml`。参考图片放入配置的 ComfyUI `input` 目录，文件名以 Asset ID 开头时系统会唯一匹配；歧义资产再写入 `private/asset_manifest.json` 精确指定。资产、模型、生成视频、Prompt、运行记录和本机绝对路径不会上传 GitHub。
 
 完成配置后，先启动 ComfyUI，再双击 `start-ui.cmd`。浏览器会打开 `http://127.0.0.1:8765/`。后续更新执行 `git pull --ff-only`，然后重新运行 `setup-production.cmd`；私有配置仍会保留。
+
+安装脚本还会安装可自动发现的 `$h3-video-production` Skill。其他工位可以直接在 Codex 对话中上传 Prompt TXT/YAML/JSON 和资产 ZIP、目录或图片，然后要求“使用 H3 生产并命名为 A4 E15 HMS”。Skill 会把资产隔离到本次任务目录，完成映射预检后自动提交，并在 `http://127.0.0.1:8765/` 显示进度。只要求检查或映射时不会提交生成。
+
+如果只安装了 Skill，可先让 Codex 执行 `$h3-video-production` 的 `bootstrap`；默认把项目安装到 `%USERPROFILE%\Documents\h3-batch-worker`。Skill 不会安装或升级 ComfyUI、自定义节点、模型、CUDA 或 PyTorch。
 
 默认读取当前目录中的 `config.yaml`；不存在时读取 `config.example.yaml`。可复制示例为 `config.yaml`，或者显式指定：
 

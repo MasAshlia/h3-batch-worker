@@ -82,3 +82,11 @@ def test_runner_rejects_incomplete_record(runner, missing):
     path.write_text(json.dumps(record), encoding="utf-8")
     with pytest.raises(ValueError):
         module.verify_run(path)
+
+
+def test_production_setup_installs_codex_skill(project_root):
+    setup = (project_root / "setup-production.cmd").read_text(encoding="utf-8")
+    assert "codex-skills\\h3-video-production" in setup
+    assert "%USERPROFILE%\\.codex\\skills\\h3-video-production" in setup
+    assert "project-root.txt" in setup
+    assert "--no-pause" in setup

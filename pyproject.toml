@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "h3-batch-worker"
-version = "0.3.0"
+version = "0.4.0"
 description = "Production-safe ComfyUI MiniMax H3 episode batch worker"
 requires-python = ">=3.12"
 dependencies = ["PyYAML>=6,<7"]

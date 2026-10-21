@@ -1,0 +1,6 @@
+interface:
+  display_name: "H3 Video Production"
+  short_description: "Generate H3 episode videos from prompts and assets"
+  default_prompt: "Use $h3-video-production to produce these shot prompts with the attached asset pack."
+policy:
+  allow_implicit_invocation: true

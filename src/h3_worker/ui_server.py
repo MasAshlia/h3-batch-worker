@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from functools import partial
 from hashlib import sha256
@@ -122,6 +122,7 @@ class _Preflight:
     response: dict
     job_root: Path
     input_files: tuple[dict, ...]
+    config: Config
 
 
 class UiController:
@@ -129,6 +130,7 @@ class UiController:
         self.config = config
         self.workspace = (workspace or config.output_root.parent / "ui_jobs").resolve()
         self.workspace.mkdir(parents=True, exist_ok=True)
+        self.upload_root = (self.workspace.parent / "codex_uploads").resolve()
         self._lock = threading.Lock()
         self._preflights: dict[str, _Preflight] = {}
         self._asset_tokens: dict[str, Path] = {}
@@ -137,9 +139,29 @@ class UiController:
         self._active_session: Path | None = None
         self._service_error: dict | None = None
 
-    def preflight(self, files: list[dict]) -> dict:
+    def _bundle_config(self, asset_bundle_id: str | None) -> Config:
+        if asset_bundle_id is None:
+            return self.config
+        if not isinstance(asset_bundle_id, str) or not re.fullmatch(r"[0-9a-f]{32}", asset_bundle_id):
+            raise ConfigurationError("Invalid asset bundle ID")
+        bundle = (self.upload_root / asset_bundle_id).resolve()
+        if not bundle.is_relative_to(self.upload_root):
+            raise ConfigurationError("Invalid asset bundle path")
+        assets = bundle / "assets"
+        manifest = bundle / "asset_manifest.json"
+        if not assets.is_dir() or not manifest.is_file():
+            raise ConfigurationError("Asset bundle is incomplete")
+        return replace(
+            self.config,
+            asset_manifest=manifest,
+            asset_roots=(assets,),
+            asset_index=bundle / "asset_index.generated.json",
+        )
+
+    def preflight(self, files: list[dict], asset_bundle_id: str | None = None) -> dict:
         if not isinstance(files, list) or not files:
             raise ConfigurationError("Choose at least one Prompt file")
+        job_config = self._bundle_config(asset_bundle_id)
         job_id = uuid4().hex
         job_root = self.workspace / job_id
         job_root.mkdir(parents=True)
@@ -159,7 +181,7 @@ class UiController:
             name, content = files[0].get("name"), files[0].get("text")
             source = job_root / Path(name).name
             source.write_text(content, encoding="utf-8")
-            report, _ = compile_batch(source, self.config, max_reference_images=reference_limit)
+            report, _ = compile_batch(source, job_config, max_reference_images=reference_limit)
             reports.append(report)
             sources.append(source)
         else:
@@ -184,7 +206,7 @@ class UiController:
                     seen.add(shot_id)
                     (source / f"SHOT_{order:04d}_{shot_id}.txt").write_text(prompt, encoding="utf-8")
                 report, _ = compile_episode_folder(
-                    source, self.config, max_reference_images=reference_limit,
+                    source, job_config, max_reference_images=reference_limit,
                 )
                 reports.append(report)
                 sources.append(source)
@@ -200,7 +222,7 @@ class UiController:
                 **_report_json(combined, self._asset_tokens),
             }
             self._preflights[job_id] = _Preflight(
-                tuple(sources), response, job_root, tuple(input_files),
+                tuple(sources), response, job_root, tuple(input_files), job_config,
             )
         return response
 
@@ -269,11 +291,11 @@ class UiController:
             for source in preflight.sources:
                 if source.is_dir():
                     report, patcher = compile_episode_folder(
-                        source, self.config, max_reference_images=reference_limit,
+                        source, preflight.config, max_reference_images=reference_limit,
                     )
                 else:
                     report, patcher = compile_batch(
-                        source, self.config, max_reference_images=reference_limit,
+                        source, preflight.config, max_reference_images=reference_limit,
                     )
                 if not report.ready or patcher.is_test_fixture:
                     raise ConfigurationError("Production preflight no longer passes")
@@ -295,14 +317,14 @@ class UiController:
                     for task in report.tasks
                 }
                 _, record = QueueManager(
-                    client, patcher, self.config.output_root,
+                    client, patcher, preflight.config.output_root,
                     max_attempts=1,
                     require_queue_confirmation=True,
                     require_video_output=True,
                     require_idle_before_each=True,
                     stop_on_failure=True,
-                    debug_root=self.config.debug_root,
-                    comfy_output=self.config.comfy_output,
+                    debug_root=preflight.config.debug_root,
+                    comfy_output=preflight.config.comfy_output,
                     on_run_created=created,
                 ).run(report, generation_counts=episode_counts, run_name=run_name)
                 if record["summary"]["failed"]:
@@ -346,6 +368,7 @@ class UiController:
         result = {
             "running": running, "service_error": service_error,
             "run": record, "session": session,
+            "capabilities": {"codex_asset_bundles": True},
         }
         if session is not None:
             completed = 0
@@ -461,7 +484,9 @@ class UiHandler(BaseHTTPRequestHandler):
                 raise ConfigurationError("Request body is empty or too large")
             body = json.loads(self.rfile.read(length))
             if self.path == "/api/preflight":
-                self._json(self.controller.preflight(body.get("files")))
+                self._json(self.controller.preflight(
+                    body.get("files"), body.get("asset_bundle_id"),
+                ))
             elif self.path == "/api/runs":
                 self._json(self.controller.start(
                     body.get("preflight_id"), body.get("generation_counts"), body.get("run_name"),

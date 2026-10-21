@@ -97,3 +97,43 @@ def test_history_and_media_use_recorded_comfy_output(config, tmp_path):
     assert controller.media_path("run-1", 0) == comfy_output / "shot.mp4"
     with pytest.raises(ConfigurationError):
         controller.run_record("../escape")
+
+
+def test_ui_state_advertises_codex_asset_bundle_support(config, tmp_path):
+    state = UiController(config, workspace=tmp_path / "jobs").state()
+    assert state["capabilities"]["codex_asset_bundles"] is True
+
+
+def test_ui_preflight_uses_isolated_codex_asset_bundle(config, tmp_path, monkeypatch):
+    class SchemaClient:
+        def __init__(self, base_url):
+            pass
+
+        def get_h3_reference_limit(self):
+            return 9
+
+    monkeypatch.setattr(ui_module, "RealComfyClient", SchemaClient)
+    workspace = tmp_path / "ui_jobs"
+    controller = UiController(config, workspace=workspace)
+    bundle_id = "a" * 32
+    bundle = tmp_path / "codex_uploads" / bundle_id
+    (bundle / "assets").mkdir(parents=True)
+    asset = bundle / "assets" / "R01.png"
+    asset.write_bytes(b"image")
+    (bundle / "asset_manifest.json").write_text(
+        json.dumps({"R01": "assets/R01.png"}), encoding="utf-8",
+    )
+    prompt = (
+        "SHOT 33-1 TEST\nSHOT DURATION: 5.2 seconds\n"
+        "<Picture 1> = Asset R01.\n\n[PROMPT]\nTest.\n"
+    )
+    result = controller.preflight([{"name": "shot.txt", "text": prompt}], bundle_id)
+    assert result["ready"] is True
+    assert result["shots"][0]["mappings"][0]["path"] == str(asset)
+
+
+@pytest.mark.parametrize("bundle_id", ["../escape", "A" * 32, "short"])
+def test_ui_preflight_rejects_invalid_codex_bundle_id(config, tmp_path, bundle_id):
+    controller = UiController(config, workspace=tmp_path / "ui_jobs")
+    with pytest.raises(ConfigurationError, match="Invalid asset bundle ID"):
+        controller.preflight([{"name": "shot.txt", "text": "x"}], bundle_id)
