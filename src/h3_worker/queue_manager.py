@@ -140,7 +140,14 @@ class QueueManager:
         def save():
             temporary = run_path.with_suffix(".tmp")
             temporary.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
-            temporary.replace(run_path)
+            for attempt in range(5):
+                try:
+                    temporary.replace(run_path)
+                    return
+                except PermissionError:
+                    if attempt == 4:
+                        raise
+                    time.sleep(0.05 * (2 ** attempt))
 
         def transition(compiled, shot, status):
             compiled.task.status = status
@@ -287,10 +294,22 @@ class QueueManager:
                             if isinstance(exc, UnknownSubmissionError) else TaskStatus.FAILED
                         )
                         error = exc.to_dict()
-                    except Exception:
-                        # Isolate an unexpected client failure; do not expose arbitrary exception text.
-                        status = TaskStatus.FAILED
-                        error = {"type": "UnexpectedClientError", "message": "Unexpected task execution error"}
+                    except Exception as exc:
+                        # A prompt_id means ComfyUI may still be running. Never report or retry it as failed.
+                        if shot["prompt_id"]:
+                            status = TaskStatus.UNKNOWN_SUBMISSION
+                            error = {
+                                "type": "MonitoringStateUnknownError",
+                                "message": "Prompt was submitted but monitoring failed; automatic resubmission is disabled",
+                                "details": {"exception_type": type(exc).__name__},
+                            }
+                        else:
+                            status = TaskStatus.FAILED
+                            error = {
+                                "type": "UnexpectedClientError",
+                                "message": "Unexpected task execution error",
+                                "details": {"exception_type": type(exc).__name__},
+                            }
                     attempt.update(status=status, error=error, finished_at=_now())
                     shot["error"] = error
                     transition(compiled, shot, status)

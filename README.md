@@ -265,3 +265,15 @@ python -m h3_worker.cli watch private/inbox --mock --once --config config.exampl
 右侧历史列表读取既有 `run.json`，下方可直接播放已经落盘的视频，因此之前完成的真实 EP34 九个镜头也会自动出现在页面中。关闭启动窗口即可停止界面服务，不影响已经由 ComfyUI 完成的视频文件。
 
 此版本没有多机调度、废片识别、剪映集成、数据库或模型安装。项目作为独立的 `h3-batch-worker` 仓库发布；`.venv`、`runs`、`.env`、本地 `config.yaml` 和缓存不上传。
+
+## AI 审片与修订生成
+
+每个历史视频下方都有紧凑的“AI 修改 / 重新生成”入口。点击后填写修改要求、附问题截图；AI 返回修改说明和完整提示词，可展开差异、继续修改或手动编辑。关闭弹窗时保存草稿。人工点击“确认并排队生成”后才会提交视频任务，默认一次，可选 1–4 次。
+
+页面顶部“设置”支持 OpenAI 兼容的 Chat Completions 服务。填写完整 API 基础地址（通常包含 `/v1`）、支持图片的模型名和密钥，再检查连接。文字连接检查不代表模型支持图片；附图能力在实际改写时验证。配置保存在 Git 忽略的 `private/ai-settings.json`，密钥不会通过接口回显。
+
+截图只用于审片，不成为视频 Reference。每次最多四张 PNG/JPG/WEBP，每张不超过 10 MB。修订可增减本任务已有资产，锁定镜头编号和时长；确认入队和实际启动时都会重新预检，资产快照变化、缺失引用或槽位错误均会停止该修订。原提示词和旧视频不会覆盖。
+
+修订草稿与队列保存在 `private/reviews`。当前生产会话全部结束后，修订按确认顺序执行；普通生产不能越过已确认的修订队列。设置窗口可查看队列状态。服务重启后未开始的队列继续保留，正在提交或运行的修订标为 `UNKNOWN_SUBMISSION`，须核查原 session 与 ComfyUI history，禁止自动重复提交。来源视频的弹窗中可以查看修订及新视频链接。
+
+本地接口：`GET/POST /api/ai/settings`、`POST /api/ai/test`、`GET/POST /api/reviews`、`GET /api/reviews/<id>`，以及 `POST /api/reviews/<id>/{save,rewrite,preflight,enqueue}`。重复 enqueue 返回同一修订状态，不会重复入队。

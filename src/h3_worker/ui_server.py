@@ -138,6 +138,8 @@ class UiController:
         self._active_run: Path | None = None
         self._active_session: Path | None = None
         self._service_error: dict | None = None
+        from .review import ReviewService
+        self.reviews = ReviewService(self)
 
     def _bundle_config(self, asset_bundle_id: str | None) -> Config:
         if asset_bundle_id is None:
@@ -226,8 +228,10 @@ class UiController:
             )
         return response
 
-    def start(self, preflight_id: str, generation_counts: dict, run_name: str | None = None) -> dict:
+    def start(self, preflight_id: str, generation_counts: dict, run_name: str | None = None, *, _from_queue=False) -> dict:
         with self._lock:
+            if not _from_queue and self.reviews.pending():
+                raise ConfigurationError("Confirmed video revisions are queued; wait for the queue to finish")
             preflight = self._preflights.get(preflight_id)
             if preflight is None:
                 raise ConfigurationError("Preflight has expired; upload the Prompt again")
@@ -479,11 +483,42 @@ class UiHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         try:
+            if self.headers.get_content_type() != "application/json":
+                raise ConfigurationError("JSON requests are required")
+            origin = self.headers.get("Origin")
+            if origin and urlparse(origin).netloc != self.headers.get("Host"):
+                raise ConfigurationError("Cross-origin production requests are not allowed")
             length = int(self.headers.get("Content-Length", "0"))
-            if not 0 < length <= 20_000_000:
+            if not 0 < length <= 65_000_000:
                 raise ConfigurationError("Request body is empty or too large")
             body = json.loads(self.rfile.read(length))
-            if self.path == "/api/preflight":
+            if not isinstance(body, dict):
+                raise ConfigurationError("Request must contain an object")
+            if self.path == "/api/ai/settings":
+                self._json(self.controller.reviews.settings(body))
+            elif self.path == "/api/ai/test":
+                self.controller.reviews.call_ai([{"role": "user", "content": "Reply OK."}])
+                self._json({"ok": True})
+            elif self.path == "/api/reviews":
+                self._json(self.controller.reviews.create(body.get("batch_id"), body.get("shot_index")))
+            elif self.path.startswith("/api/reviews/"):
+                parts = self.path.split("/")
+                if len(parts) != 5:
+                    raise ConfigurationError("Invalid review action")
+                review_id, action = parts[3:]
+                service = self.controller.reviews
+                if action == "save":
+                    result = service.update(review_id, body)
+                elif action == "rewrite":
+                    result = service.rewrite(review_id)
+                elif action == "preflight":
+                    result = service.preflight(review_id)
+                elif action == "enqueue":
+                    result = service.enqueue(review_id)
+                else:
+                    raise ConfigurationError("Unknown review action")
+                self._json(result)
+            elif self.path == "/api/preflight":
                 self._json(self.controller.preflight(
                     body.get("files"), body.get("asset_bundle_id"),
                 ))
@@ -493,7 +528,7 @@ class UiHandler(BaseHTTPRequestHandler):
                 ), HTTPStatus.ACCEPTED)
             else:
                 self.send_error(HTTPStatus.NOT_FOUND)
-        except (WorkerError, ValueError, TypeError) as exc:
+        except (WorkerError, ValueError, TypeError, OSError, KeyError) as exc:
             self._error(exc)
 
     def do_GET(self) -> None:
@@ -507,8 +542,18 @@ class UiHandler(BaseHTTPRequestHandler):
                 self.send_header("Cache-Control", "no-store")
                 self.end_headers()
                 self.wfile.write(payload)
+            elif path == "/review.js":
+                self._send_file(self.html_path.with_name("review.js"))
             elif path == "/api/state":
                 self._json(self.controller.state())
+            elif path == "/api/ai/settings":
+                self._json(self.controller.reviews.settings())
+            elif path == "/api/reviews":
+                self._json({"reviews": [{k: v for k, v in item.items() if k in {
+                    "id", "source_batch", "source_index", "shot_id", "status", "summary", "session_id", "child_runs", "error", "created_at",
+                }} for item in self.controller.reviews.items()]})
+            elif path.startswith("/api/reviews/"):
+                self._json(self.controller.reviews.get(path.removeprefix("/api/reviews/")))
             elif path == "/api/runs":
                 self._json({"runs": self.controller.history()})
             elif path.startswith("/api/runs/"):
@@ -571,6 +616,7 @@ def serve(config_path: Path, *, port: int = 8765, open_browser: bool = True) -> 
         "html_path": html_path,
     })
     server = ThreadingHTTPServer(("127.0.0.1", port), handler)
+    controller.reviews.start_dispatcher()
     url = f"http://127.0.0.1:{port}/"
     if open_browser:
         threading.Timer(0.3, partial(webbrowser.open, url)).start()
@@ -580,6 +626,7 @@ def serve(config_path: Path, *, port: int = 8765, open_browser: bool = True) -> 
     except KeyboardInterrupt:
         pass
     finally:
+        controller.reviews.stop.set()
         server.server_close()
 
 

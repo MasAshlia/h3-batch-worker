@@ -19,7 +19,7 @@ h3-worker = "h3_worker.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-h3_worker = ["ui.html"]
+h3_worker = ["ui.html", "review.js"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

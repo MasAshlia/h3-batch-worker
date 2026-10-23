@@ -91,6 +91,49 @@ def test_upload_exception_does_not_stop_next_shot_or_leak_error(batch, tmp_path,
     assert "secret-token" not in path.read_text(encoding="utf-8")
 
 
+def test_run_record_replace_retries_windows_sharing_violation(batch, tmp_path, monkeypatch):
+    report, patcher = batch
+    report.items = report.items[:1]
+    original_replace = queue_module.Path.replace
+    calls = 0
+
+    def temporarily_locked(path, target):
+        nonlocal calls
+        calls += 1
+        if calls <= 2:
+            raise PermissionError("file is temporarily in use")
+        return original_replace(path, target)
+
+    monkeypatch.setattr(queue_module.Path, "replace", temporarily_locked)
+    _, record = QueueManager(MockComfyClient(), patcher, tmp_path, max_attempts=1).run(report)
+    assert calls > 2
+    assert record["shots"][0]["status"] == TaskStatus.SUCCESS
+
+
+def test_unexpected_monitor_error_after_prompt_id_is_unknown_not_failed(batch, tmp_path):
+    report, patcher = batch
+    report.items = report.items[:1]
+
+    class BrokenMonitorClient(MockComfyClient):
+        def wait_for_completion(self, prompt_id, **kwargs):
+            kwargs["on_running"]()
+            raise RuntimeError("private monitor detail")
+
+    client = BrokenMonitorClient()
+    run_path, record = QueueManager(
+        client, patcher, tmp_path, max_attempts=2, stop_on_failure=True,
+    ).run(report)
+    shot = record["shots"][0]
+    assert len(client.jobs) == 1
+    assert shot["status"] == TaskStatus.UNKNOWN_SUBMISSION
+    assert shot["error"] == {
+        "type": "MonitoringStateUnknownError",
+        "message": "Prompt was submitted but monitoring failed; automatic resubmission is disabled",
+        "details": {"exception_type": "RuntimeError"},
+    }
+    assert "private monitor detail" not in run_path.read_text(encoding="utf-8")
+
+
 def test_real_mode_records_history_video_and_shot_mapping(batch, tmp_path):
     report, patcher = batch
     report.items = report.items[:1]

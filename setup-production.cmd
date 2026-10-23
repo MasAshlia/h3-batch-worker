@@ -41,13 +41,16 @@ xcopy "%H3_SKILL_SOURCE%" "%H3_SKILL_DEST%\" /E /I /Y /Q >nul
 if errorlevel 1 goto failed
 > "%H3_SKILL_DEST%\project-root.txt" echo %CD%
 
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%CD%\create-desktop-shortcut.ps1"
+if errorlevel 1 goto failed
+
 echo.
 echo H3 production worker is installed.
 echo Codex skill installed: h3-video-production
 echo 1. Edit private\config.windows.yaml if this PC uses different ComfyUI paths.
 echo 2. Put reference images in the configured ComfyUI input folder.
 echo 3. Add exact overrides to private\asset_manifest.json only when automatic matching is ambiguous.
-echo 4. Start ComfyUI, then double-click start-ui.cmd.
+echo 4. Start ComfyUI, then use the H3 desktop shortcut.
 if not defined H3_NO_PAUSE pause
 exit /b 0
 
